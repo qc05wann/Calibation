@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="theme-color" content="#059669"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>CalibTrack</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚙️</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100dvh;font-family:'Sarabun',system-ui,sans-serif;background:#f9fafb;overflow:hidden}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:2px}
+::-webkit-scrollbar-thumb:hover{background:#9ca3af}
+.app{display:flex;height:100dvh;width:100%}
+
+/* Sidebar */
+.sidebar{width:220px;background:linear-gradient(180deg,#064e3b 0%,#065f46 100%);color:#fff;display:flex;flex-direction:column;flex-shrink:0;transition:width .2s;overflow:hidden;z-index:20}
+.sidebar.collapsed{width:60px}
+.sidebar-brand{padding:16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.15);min-height:64px}
+.sidebar-brand h1{font-size:18px;font-weight:700;white-space:nowrap;letter-spacing:-.5px}
+.sidebar-brand .icon{font-size:24px;flex-shrink:0}
+.sidebar-nav{flex:1;padding:8px;display:flex;flex-direction:column;gap:2px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:all .15s;color:rgba(255,255,255,.7);font-size:14px;font-weight:500;white-space:nowrap;position:relative}
+.nav-item:hover{background:rgba(255,255,255,.1);color:#fff}
+.nav-item.active{background:rgba(255,255,255,.15);color:#fff;font-weight:600}
+.nav-item .nav-icon{width:20px;text-align:center;flex-shrink:0;font-size:16px}
+.nav-item .badge{position:absolute;right:8px;background:#ef4444;color:#fff;font-size:10px;padding:1px 6px;border-radius:99px;font-weight:700}
+.sidebar-footer{padding:12px;border-top:1px solid rgba(255,255,255,.15);font-size:11px;color:rgba(255,255,255,.4);text-align:center}
+.sidebar-toggle{display:none;position:fixed;top:12px;left:12px;z-index:30;background:#065f46;color:#fff;border:none;border-radius:8px;width:40px;height:40px;font-size:20px;cursor:pointer}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:15}
+
+/* Main */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.main-header{background:#fff;border-bottom:1px solid #e5e7eb;padding:12px 20px;display:flex;align-items:center;gap:12px;min-height:56px;flex-shrink:0}
+.main-header h2{font-size:17px;font-weight:700;color:#1f2937}
+.main-content{flex:1;overflow-y:auto;padding:16px 20px}
+
+/* Cards */
+.card{background:#fff;border-radius:12px;border:1px solid #e5e7eb;padding:16px;margin-bottom:12px}
+.card-title{font-size:13px;font-weight:600;color:#6b7280;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.summary-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;text-align:center;transition:all .15s}
+.summary-card:hover{border-color:#a7f3d0;transform:scale(1.01)}
+.summary-card .num{font-size:28px;font-weight:700;line-height:1}
+.summary-card .lbl{font-size:12px;color:#6b7280;margin-top:4px}
+.summary-card.emerald .num{color:#059669}
+.summary-card.red .num{color:#dc2626}
+.summary-card.amber .num{color:#d97706}
+.summary-card.blue .num{color:#2563eb}
+
+/* Table */
+.tbl-wrap{overflow-x:auto;border:1px solid #e5e7eb;border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#f9fafb;padding:8px 10px;text-align:left;font-weight:600;color:#4b5563;border-bottom:1px solid #e5e7eb;white-space:nowrap;position:sticky;top:0;z-index:1}
+td{padding:8px 10px;border-bottom:1px solid #f3f4f6;color:#374151;vertical-align:middle}
+tr:hover td{background:#f0fdf4}
+.badge-status{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+.badge-ok{background:#d1fae5;color:#065f46}
+.badge-warn{background:#fef3c7;color:#92400e}
+.badge-over{background:#fee2e2;color:#991b1b}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s;font-family:inherit}
+.btn-primary{background:#059669;color:#fff}.btn-primary:hover{background:#047857}
+.btn-secondary{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb}.btn-secondary:hover{background:#e5e7eb}
+.btn-danger{background:#fee2e2;color:#991b1b}.btn-danger:hover{background:#fecaca}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-icon{padding:6px;border-radius:6px;background:transparent;border:none;cursor:pointer;color:#6b7280;transition:all .15s}
+.btn-icon:hover{background:#f3f4f6;color:#1f2937}
+
+/* Search */
+.search-bar{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0 12px;flex:1;max-width:400px}
+.search-bar input{border:none;outline:none;padding:8px 0;flex:1;font-size:13px;font-family:inherit;background:transparent}
+.search-bar .icon{color:#9ca3af;font-size:14px}
+
+/* Filters */
+.filter-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.filter-chip{padding:5px 12px;border-radius:99px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid #e5e7eb;background:#fff;color:#6b7280;transition:all .15s}
+.filter-chip:hover{border-color:#a7f3d0}
+.filter-chip.active{background:#059669;color:#fff;border-color:#059669}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal{background:#fff;border-radius:16px;width:100%;max-width:520px;max-height:90dvh;overflow-y:auto;padding:24px}
+.modal h3{font-size:16px;font-weight:700;margin-bottom:16px;color:#1f2937}
+.form-group{margin-bottom:12px}
+.form-group label{display:block;font-size:12px;font-weight:600;color:#4b5563;margin-bottom:4px}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;font-family:inherit;outline:none;transition:border .15s}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:#34d399}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* PIN Screen */
+.pin-screen{position:fixed;inset:0;background:linear-gradient(135deg,#064e3b,#065f46 50%,#047857);display:flex;align-items:center;justify-content:center;z-index:100;flex-direction:column;color:#fff}
+.pin-box{text-align:center}
+.pin-box h1{font-size:28px;font-weight:700;margin-bottom:4px}
+.pin-box p{color:rgba(255,255,255,.6);margin-bottom:24px;font-size:14px}
+.pin-dots{display:flex;gap:12px;justify-content:center;margin-bottom:24px}
+.pin-dot{width:14px;height:14px;border-radius:99px;border:2px solid rgba(255,255,255,.4);transition:all .2s}
+.pin-dot.filled{background:#34d399;border-color:#34d399}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:240px;margin:0 auto}
+.pin-key{width:64px;height:64px;border-radius:50%;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;font-size:22px;font-weight:600;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;font-family:inherit}
+.pin-key:hover{background:rgba(255,255,255,.18)}
+.pin-key:active{transform:scale(.93)}
+.pin-key.empty{visibility:hidden}
+.pin-key.backspace{font-size:16px}
+.pin-msg{margin-top:16px;font-size:13px;min-height:20px}
+.pin-msg.error{color:#fca5a5}
+
+/* Annual Plan */
+.plan-table{font-size:11px}
+.plan-table th{padding:6px 8px;font-size:11px}
+.plan-table td{padding:4px 6px;text-align:center}
+.plan-dot{width:20px;height:20px;border-radius:50%;margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700}
+.plan-dot.due{background:#d1fae5;color:#065f46}
+.plan-dot.overdue{background:#fee2e2;color:#991b1b}
+.plan-dot.warn{background:#fef3c7;color:#92400e}
+
+/* Alerts */
+.alert-item{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:8px;transition:all .15s}
+.alert-item:hover{border-color:#fca5a5}
+.alert-item.overdue{border-left:3px solid #ef4444}
+.alert-item.soon{border-left:3px solid #f59e0b}
+.alert-info{flex:1;min-width:0}
+.alert-info .name{font-weight:600;font-size:14px;color:#1f2937}
+.alert-info .detail{font-size:12px;color:#6b7280}
+.alert-days{font-size:13px;font-weight:700;white-space:nowrap}
+.alert-days.over-text{color:#dc2626}
+.alert-days.warn-text{color:#d97706}
+
+/* Settings */
+.setting-section{border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:12px}
+.setting-section h4{font-size:14px;font-weight:700;color:#1f2937;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+
+/* Toast */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#065f46;color:#fff;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:500;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+
+/* Cert upload */
+.cert-zone{border:2px dashed #d1d5db;border-radius:10px;padding:24px;text-align:center;cursor:pointer;transition:all .15s;color:#6b7280;font-size:13px}
+.cert-zone:hover{border-color:#34d399;background:#f0fdf4}
+.cert-preview{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.cert-thumb{width:60px;height:60px;border-radius:6px;object-fit:cover;border:1px solid #e5e7eb}
+
+/* Responsive */
+@media(max-width:768px){
+  .sidebar{position:fixed;left:-220px;z-index:20;height:100dvh;transition:left .25s}
+  .sidebar.open{left:0}
+  .sidebar-toggle{display:flex;align-items:center;justify-content:center}
+  .sidebar-overlay.show{display:block}
+  .summary-grid{grid-template-columns:repeat(2,1fr)}
+  .form-row{grid-template-columns:1fr}
+  .main-content{padding:12px}
+  .main-header{padding:12px 12px 12px 56px}
+}
+@media(max-width:480px){
+  .summary-grid{grid-template-columns:1fr 1fr}
+  .pin-key{width:56px;height:56px;font-size:20px}
+}
+
+/* Print */
+.export-section{border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:12px}
+.export-section h4{font-size:14px;font-weight:700;margin-bottom:12px}
+</style>
+</head>
+<body>
+
+<button class="sidebar-toggle" onclick="toggleSidebar()">☰</button>
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="app">
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <span class="icon">⚙️</span>
+    <h1>CalibTrack</h1>
+  </div>
+  <nav class="sidebar-nav" id="sidebarNav"></nav>
+  <div class="sidebar-footer">v2.0 · Single-File Edition</div>
+</aside>
+
+<div class="main">
+  <header class="main-header">
+    <h2 id="pageTitle">รายการอุปกรณ์</h2>
+    <div style="flex:1"></div>
+    <button class="btn btn-sm btn-secondary" onclick="doLogout()" title="ออกจากระบบ">🔒 ล็อค</button>
+  </header>
+  <div class="main-content" id="mainContent"></div>
+</div>
+</div>
+
+<!-- PIN Screen -->
+<div class="pin-screen" id="pinScreen">
+  <div class="pin-box">
+    <div style="font-size:48px;margin-bottom:8px">⚙️</div>
+    <h1>CalibTrack</h1>
+    <p>กรอก PIN เพื่อเข้าใช้งาน</p>
+    <div class="pin-dots" id="pinDots"></div>
+    <div class="pin-pad" id="pinPad"></div>
+    <div class="pin-msg" id="pinMsg"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== CONFIG =====
+const LS_ITEMS = 'ct_items_v2';
+const LS_PIN = 'ct_pin_v1';
+const LS_SESSION = 'ct_session_v1';
+const LS_SETTINGS = 'ct_settings_v1';
+
+// ===== DEFAULT DATA =====
+const DEFAULT_ITEMS = [
+  {id:"MWC-FL-10",name:"Electronic Balance 0.1mg",room:"Lab",dept:"QC",interval:12,lastCalib:"2025-01-15",certs:[],note:"",resolution:"0.1 mg",tolerance:"±0.2 mg",calibResult:"",docRef:""},
+  {id:"MWC-QA-02",name:"Standard Weight 1mg-200g",room:"Lab",dept:"QC",interval:12,lastCalib:"2025-03-10",certs:[],note:"",resolution:"",tolerance:"",calibResult:"",docRef:""},
+  {id:"MTC-QA-01",name:"Digital Thermohygrometer",room:"Micro Lab",dept:"QC",interval:12,lastCalib:"2024-12-01",certs:[],note:"",resolution:"0.1°C / 1%RH",tolerance:"±0.5°C / ±3%RH",calibResult:"",docRef:""},
+  {id:"MWC-QA-05",name:"pH Meter Benchtop",room:"Lab",dept:"QC",interval:6,lastCalib:"2025-09-01",certs:[],note:"",resolution:"0.01",tolerance:"±0.02",calibResult:"",docRef:""},
+  {id:"MWC-QA-07",name:"Viscometer DV-II+",room:"Lab",dept:"QC",interval:12,lastCalib:"2025-02-20",certs:[],note:"",resolution:"",tolerance:"±1%",calibResult:"",docRef:""},
+  {id:"MWC-QA-08",name:"Conductivity Meter",room:"Lab",dept:"QC",interval:12,lastCalib:"2025-04-05",certs:[],note:"",resolution:"",tolerance:"",calibResult:"",docRef:""},
+  {id:"MWC-QA-09",name:"UV-Vis Spectrophotometer",room:"Lab",dept:"QC",interval:12,lastCalib:"2025-01-30",certs:[],note:"",resolution:"",tolerance:"",calibResult:"",docRef:""},
+  {id:"MWC-QA-11",name:"Micropipette 100-1000µl",room:"Micro Lab",dept:"QC",interval:6,lastCalib:"2025-08-15",certs:[],note:"",resolution:"",tolerance:"±0.6-1.0%",calibResult:"",docRef:""},
+  {id:"MWC-QA-12",name:"Micropipette 10-100µl",room:"Micro Lab",dept:"QC",interval:6,lastCalib:"2025-08-15",certs:[],note:"",resolution:"",tolerance:"±0.8-2.0%",calibResult:"",docRef:""},
+  {id:"MWC-QA-14",name:"HunterLab ColorFlex L2",room:"Lab",dept:"QC",interval:12,lastCalib:"2025-05-10",certs:[],note:"",resolution:"",tolerance:"",calibResult:"",docRef:""},
+  {id:"MWC-QA-15",name:"Force Gauge Chatillon DFS3",room:"Lab",dept:"QC",interval:12,lastCalib:"2025-06-01",certs:[],note:"",resolution:"0.5 N",tolerance:"±1%",calibResult:"",docRef:""},
+  {id:"MWC-QA-16",name:"Hardness Tester",room:"Lab",dept:"QC",interval:12,lastCalib:"2025-03-22",certs:[],note:"",resolution:"",tolerance:"",calibResult:"",docRef:""},
+  {id:"MWC-QA-17",name:"Autoclave 50L",room:"Micro Lab",dept:"QC",interval:12,lastCalib:"2024-11-15",certs:[],note:"",resolution:"",tolerance:"",calibResult:"",docRef:""},
+  {id:"MWC-QA-18",name:"Incubator 37°C",room:"Micro Lab",dept:"QC",interval:12,lastCalib:"2025-07-01",certs:[],note:"",resolution:"0.1°C",tolerance:"±1.0°C",calibResult:"",docRef:""},
+  {id:"MWC-QA-19",name:"Laminar Flow Cabinet",room:"Micro Lab",dept:"QC",interval:12,lastCalib:"2025-07-01",certs:[],note:"",resolution:"",tolerance:"",calibResult:"",docRef:""},
+  {id:"MWC-PR-01",name:"Pressure Gauge Tank A1",room:"Prod Room 1",dept:"Production",interval:12,lastCalib:"2025-02-01",certs:[],note:"",resolution:"",tolerance:"",calibResult:"",docRef:""},
+  {id:"MWC-PR-02",name:"Pressure Gauge Tank A2",room:"Prod Room 1",dept:"Production",interval:12,lastCalib:"2025-02-01",certs:[],note:"",resolution:"",tolerance:"",calibResult:"",docRef:""},
+  {id:"MWC-PR-03",name:"Thermometer Liquid Tank",room:"Prod Room 2",dept:"Production",interval:12,lastCalib:"2025-04-15",certs:[],note:"",resolution:"",tolerance:"",calibResult:"",docRef:""},
+  {id:"MWC-PR-04",name:"Tachometer Mixer",room:"Prod Room 3",dept:"Production",interval:12,lastCalib:"2025-05-20",certs:[],note:"",resolution:"",tolerance:"",calibResult:"",docRef:""},
+  {id:"MWC-PR-05",name:"Flow Meter Coolant",room:"Prod Room 2",dept:"Production",interval:12,lastCalib:"2025-01-10",certs:[],note:"",resolution:"",tolerance:"",calibResult:"",docRef:""}
+];
+
+const DEFAULT_SETTINGS = { alertDays: 30, email: '' };
+const NAV_ITEMS = [
+  {id:'equipment',label:'รายการอุปกรณ์',icon:'📋'},
+  {id:'dashboard',label:'Dashboard',icon:'📊'},
+  {id:'annual-plan',label:'แผนประจำปี',icon:'📅'},
+  {id:'alerts',label:'แจ้งเตือน',icon:'🔔'},
+  {id:'print',label:'พิมพ์ / Export',icon:'🖨️'},
+  {id:'settings',label:'ตั้งค่า',icon:'⚙️'}
+];
+const MONTHS_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const MONTHS_FULL = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+
+// ===== STATE =====
+let items = [];
+let settings = {};
+let activePage = 'equipment';
+let editItem = null;
+let searchQ = '';
+let filterStatus = 'all';
+
+// ===== HELPERS =====
+function loadItems(){ 
+  const d = localStorage.getItem(LS_ITEMS); 
+  items = d ? JSON.parse(d) : JSON.parse(JSON.stringify(DEFAULT_ITEMS));
+  items.forEach(it => { if(!it.certs) it.certs=[]; if(!it.resolution) it.resolution=''; if(!it.tolerance) it.tolerance=''; if(!it.calibResult) it.calibResult=''; if(!it.docRef) it.docRef=''; });
+}
+function saveItems(){ localStorage.setItem(LS_ITEMS, JSON.stringify(items)); }
+function loadSettings(){ const d=localStorage.getItem(LS_SETTINGS); settings=d?JSON.parse(d):{...DEFAULT_SETTINGS}; }
+function saveSettings(){ localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); }
+
+function getNextCalib(item){
+  if(!item.lastCalib) return null;
+  const d = new Date(item.lastCalib);
+  d.setMonth(d.getMonth() + (item.interval||12));
+  return d;
+}
+function getDaysLeft(item){
+  const next = getNextCalib(item);
+  if(!next) return null;
+  return Math.ceil((next - new Date()) / 86400000);
+}
+function getStatus(item){
+  const days = getDaysLeft(item);
+  if(days===null) return 'unknown';
+  if(days<0) return 'overdue';
+  if(days<=settings.alertDays) return 'soon';
+  return 'ok';
+}
+function fmtDate(d){ if(!d) return '-'; const dt=new Date(d); return `${dt.getDate()}/${dt.getMonth()+1}/${dt.getFullYear()+543}`; }
+function fmtDateISO(d){ if(!d) return ''; const dt=new Date(d); return dt.toISOString().split('T')[0]; }
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
+
+function intervalLabel(m){
+  if(m===1) return 'รายเดือน';
+  if(m===3) return 'ราย 3 เดือน';
+  if(m===6) return 'ปีละ 2 ครั้ง';
+  if(m===12) return 'รายปี';
+  if(m===24) return 'ราย 2 ปี';
+  return `ทุก ${m} เดือน`;
+}
+
+// ===== PIN SYSTEM =====
+let pinInput = '';
+let pinAttempts = 0;
+let pinLocked = false;
+
+function initPIN(){
+  if(!localStorage.getItem(LS_PIN)) localStorage.setItem(LS_PIN,'1234');
+  const sess = sessionStorage.getItem(LS_SESSION);
+  if(sess==='ok'){ document.getElementById('pinScreen').style.display='none'; return; }
+  renderPIN();
+}
+
+function renderPIN(){
+  const dots = document.getElementById('pinDots');
+  dots.innerHTML = Array.from({length:4},(_,i)=>`<div class="pin-dot ${i<pinInput.length?'filled':''}"></div>`).join('');
+  
+  const pad = document.getElementById('pinPad');
+  pad.innerHTML = '';
+  [1,2,3,4,5,6,7,8,9,'',0,'⌫'].forEach(k=>{
+    const btn = document.createElement('button');
+    btn.className = 'pin-key' + (k===''?' empty':'') + (k==='⌫'?' backspace':'');
+    btn.textContent = k;
+    btn.disabled = pinLocked;
+    btn.onclick = () => handlePinKey(k);
+    pad.appendChild(btn);
+  });
+}
+
+function handlePinKey(k){
+  if(pinLocked) return;
+  if(k==='⌫'){ pinInput=pinInput.slice(0,-1); renderPIN(); return; }
+  if(k==='') return;
+  pinInput += String(k);
+  renderPIN();
+  if(pinInput.length===4){
+    const stored = localStorage.getItem(LS_PIN)||'1234';
+    if(pinInput===stored){
+      sessionStorage.setItem(LS_SESSION,'ok');
+      document.getElementById('pinScreen').style.display='none';
+      pinInput=''; pinAttempts=0;
+    } else {
+      pinAttempts++;
+      const msg = document.getElementById('pinMsg');
+      if(pinAttempts>=5){
+        pinLocked=true;
+        msg.textContent='ลองเกิน 5 ครั้ง — ลองใหม่ใน 30 วินาที';
+        msg.className='pin-msg error';
+        setTimeout(()=>{ pinLocked=false; pinAttempts=0; msg.textContent=''; renderPIN(); },30000);
+      } else {
+        msg.textContent=`PIN ไม่ถูกต้อง (${pinAttempts}/5)`;
+        msg.className='pin-msg error';
+        setTimeout(()=>{ msg.textContent=''; },2000);
+      }
+      pinInput='';
+      renderPIN();
+    }
+  }
+}
+
+function doLogout(){ sessionStorage.removeItem(LS_SESSION); pinInput=''; document.getElementById('pinScreen').style.display='flex'; renderPIN(); }
+
+// ===== SIDEBAR =====
+function renderNav(){
+  const nav = document.getElementById('sidebarNav');
+  const alertCount = items.filter(i=>getStatus(i)==='overdue'||getStatus(i)==='soon').length;
+  nav.innerHTML = NAV_ITEMS.map(n=>{
+    const badge = n.id==='alerts' && alertCount>0 ? `<span class="badge">${alertCount}</span>` : '';
+    return `<div class="nav-item ${activePage===n.id?'active':''}" onclick="navigate('${n.id}')">
+      <span class="nav-icon">${n.icon}</span><span>${n.label}</span>${badge}
+    </div>`;
+  }).join('');
+}
+
+function navigate(page){
+  activePage=page;
+  document.getElementById('pageTitle').textContent = NAV_ITEMS.find(n=>n.id===page)?.label||'';
+  renderNav();
+  renderPage();
+  // Close mobile sidebar
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('show');
+}
+function toggleSidebar(){
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebarOverlay').classList.toggle('show');
+}
+
+// ===== PAGE ROUTER =====
+function renderPage(){
+  const mc = document.getElementById('mainContent');
+  switch(activePage){
+    case 'equipment': renderEquipment(mc); break;
+    case 'dashboard': renderDashboard(mc); break;
+    case 'annual-plan': renderAnnualPlan(mc); break;
+    case 'alerts': renderAlerts(mc); break;
+    case 'print': renderPrint(mc); break;
+    case 'settings': renderSettings(mc); break;
+  }
+}
+
+// ===== EQUIPMENT PAGE =====
+function renderEquipment(mc){
+  let filtered = items.filter(it=>{
+    if(searchQ){
+      const q = searchQ.toLowerCase();
+      if(!it.id.toLowerCase().includes(q) && !it.name.toLowerCase().includes(q) && !(it.room||'').toLowerCase().includes(q)) return false;
+    }
+    if(filterStatus==='overdue') return getStatus(it)==='overdue';
+    if(filterStatus==='soon') return getStatus(it)==='soon';
+    return true;
+  });
+
+  const counts = {all:items.length, soon:items.filter(i=>getStatus(i)==='soon').length, overdue:items.filter(i=>getStatus(i)==='overdue').length};
+
+  mc.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+      <div class="search-bar">
+        <span class="icon">🔍</span>
+        <input id="searchInput" placeholder="ค้นหา รหัส / ชื่อ / ห้อง..." value="${searchQ}" oninput="searchQ=this.value;renderPage()"/>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ เพิ่มใหม่</button>
+      <button class="btn btn-secondary btn-sm" onclick="openImportModal()">📥 Import Excel</button>
+    </div>
+    <div class="filter-bar">
+      <span class="filter-chip ${filterStatus==='all'?'active':''}" onclick="filterStatus='all';renderPage()">ทั้งหมด (${counts.all})</span>
+      <span class="filter-chip ${filterStatus==='soon'?'active':''}" onclick="filterStatus='soon';renderPage()">⚠️ ใกล้ครบ (${counts.soon})</span>
+      <span class="filter-chip ${filterStatus==='overdue'?'active':''}" onclick="filterStatus='overdue';renderPage()">🔴 เกินกำหนด (${counts.overdue})</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>รหัส</th><th>ชื่อ</th><th>ห้อง</th><th>หมวด</th><th>ความถี่</th>
+          <th>สอบเทียบล่าสุด</th><th>ครั้งถัดไป</th><th>เหลือ/เกิน</th><th>สถานะ</th><th>Cert</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${filtered.length===0?'<tr><td colspan="11" style="text-align:center;padding:24px;color:#9ca3af">ไม่พบรายการ</td></tr>':''}
+          ${filtered.map(it=>{
+            const days = getDaysLeft(it);
+            const st = getStatus(it);
+            const next = getNextCalib(it);
+            const daysText = days===null?'-':days<0?`เกิน ${Math.abs(days)} วัน`:`${days} วัน`;
+            const daysClass = days!==null&&days<0?'over-text':days!==null&&days<=settings.alertDays?'warn-text':'';
+            const stBadge = st==='overdue'?'<span class="badge-status badge-over">เกินกำหนด</span>':st==='soon'?'<span class="badge-status badge-warn">ใกล้ครบ</span>':'<span class="badge-status badge-ok">ปกติ</span>';
+            const certIcon = it.certs&&it.certs.length>0?`📎${it.certs.length>1?it.certs.length:''}`:'-';
+            return `<tr>
+              <td style="font-weight:600;white-space:nowrap">${it.id}</td>
+              <td>${it.name}</td>
+              <td>${it.room||'-'}</td>
+              <td>${it.dept||'-'}</td>
+              <td style="white-space:nowrap">${intervalLabel(it.interval)}</td>
+              <td style="white-space:nowrap">${fmtDate(it.lastCalib)}</td>
+              <td style="white-space:nowrap">${next?fmtDate(next.toISOString()):'-'}</td>
+              <td class="${daysClass}" style="font-weight:600;white-space:nowrap">${daysText}</td>
+              <td>${stBadge}</td>
+              <td style="text-align:center">${certIcon}</td>
+              <td style="white-space:nowrap">
+                <button class="btn-icon" onclick="openEditModal('${it.id}')" title="แก้ไข">✏️</button>
+                <button class="btn-icon" onclick="deleteItem('${it.id}')" title="ลบ">🗑️</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:8px;font-size:12px;color:#9ca3af">แสดง ${filtered.length} จาก ${items.length} รายการ</div>
+  `;
+}
+
+// ===== DASHBOARD =====
+function renderDashboard(mc){
+  const total = items.length;
+  const overdue = items.filter(i=>getStatus(i)==='overdue').length;
+  const soon = items.filter(i=>getStatus(i)==='soon').length;
+  const hasCert = items.filter(i=>i.certs&&i.certs.length>0).length;
+  const ok = total - overdue - soon;
+
+  mc.innerHTML = `
+    <div class="summary-grid">
+      <div class="summary-card emerald"><div class="num">${total}</div><div class="lbl">อุปกรณ์ทั้งหมด</div></div>
+      <div class="summary-card red"><div class="num">${overdue}</div><div class="lbl">เกินกำหนด</div></div>
+      <div class="summary-card amber"><div class="num">${soon}</div><div class="lbl">ใกล้ครบกำหนด</div></div>
+      <div class="summary-card blue"><div class="num">${hasCert}</div><div class="lbl">มีใบ Cert</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">สถานะรวม</div>
+      <div style="display:flex;gap:4px;height:24px;border-radius:6px;overflow:hidden">
+        ${ok>0?`<div style="flex:${ok};background:#059669" title="ปกติ ${ok}"></div>`:''}
+        ${soon>0?`<div style="flex:${soon};background:#f59e0b" title="ใกล้ครบ ${soon}"></div>`:''}
+        ${overdue>0?`<div style="flex:${overdue};background:#ef4444" title="เกินกำหนด ${overdue}"></div>`:''}
+      </div>
+      <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:#6b7280">
+        <span>🟢 ปกติ ${ok}</span><span>🟡 ใกล้ครบ ${soon}</span><span>🔴 เกินกำหนด ${overdue}</span>
+      </div>
+    </div>
+    ${overdue>0?`<div class="card" style="border-color:#fecaca">
+      <div class="card-title" style="color:#dc2626">🔴 รายการเกินกำหนด</div>
+      ${items.filter(i=>getStatus(i)==='overdue').map(it=>{
+        const d=getDaysLeft(it);
+        return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:13px">
+          <span><b>${it.id}</b> — ${it.name}</span>
+          <span style="color:#dc2626;font-weight:600">เกิน ${Math.abs(d)} วัน</span>
+        </div>`;
+      }).join('')}
+    </div>`:''}
+    ${soon>0?`<div class="card" style="border-color:#fde68a">
+      <div class="card-title" style="color:#d97706">⚠️ รายการใกล้ครบกำหนด</div>
+      ${items.filter(i=>getStatus(i)==='soon').map(it=>{
+        const d=getDaysLeft(it);
+        return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:13px">
+          <span><b>${it.id}</b> — ${it.name}</span>
+          <span style="color:#d97706;font-weight:600">อีก ${d} วัน</span>
+        </div>`;
+      }).join('')}
+    </div>`:''}
+    ${overdue===0&&soon===0?'<div class="card" style="text-align:center;padding:40px;color:#059669;font-size:16px">อุปกรณ์ทุกชิ้นอยู่ในกำหนด 🎉</div>':''}
+  `;
+}
+
+// ===== ANNUAL PLAN =====
+function renderAnnualPlan(mc){
+  const now = new Date();
+  const year = now.getFullYear();
+
+  mc.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="exportAnnualPlan()">📥 Export แผนประจำปี</button>
+      <span style="font-size:13px;color:#6b7280">ปี พ.ศ. ${year+543}</span>
+    </div>
+    <div class="tbl-wrap">
+      <table class="plan-table">
+        <thead><tr>
+          <th style="min-width:60px">ลำดับ</th><th style="min-width:100px">รหัส</th><th style="min-width:160px">ชื่อ</th><th style="min-width:80px">หมวด</th>
+          ${MONTHS_TH.map(m=>`<th style="text-align:center;min-width:44px">${m}</th>`).join('')}
+        </tr></thead>
+        <tbody>
+          ${items.map((it,idx)=>{
+            const nextD = getNextCalib(it);
+            return `<tr>
+              <td style="text-align:center">${idx+1}</td>
+              <td style="font-weight:600">${it.id}</td>
+              <td>${it.name}</td>
+              <td>${it.dept||'-'}</td>
+              ${Array.from({length:12},(_,m)=>{
+                // Check if calibration is due in this month
+                if(!nextD) return '<td></td>';
+                const nMonth = nextD.getMonth();
+                const nYear = nextD.getFullYear();
+                // Show dot for the due month and for interval repeats
+                let isDue = false;
+                if(it.lastCalib){
+                  const base = new Date(it.lastCalib);
+                  for(let k=1;k<=24;k++){
+                    const check = new Date(base);
+                    check.setMonth(check.getMonth() + it.interval*k);
+                    if(check.getMonth()===m && check.getFullYear()===year){
+                      isDue = true; break;
+                    }
+                  }
+                }
+                if(!isDue) return '<td></td>';
+                const checkDate = new Date(year, m+1, 0);
+                const dLeft = Math.ceil((checkDate - now)/86400000);
+                let cls = 'due';
+                if(checkDate < now) cls='overdue';
+                else if(dLeft <= settings.alertDays) cls='warn';
+                return `<td><div class="plan-dot ${cls}">●</div></td>`;
+              }).join('')}
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// ===== ALERTS =====
+function renderAlerts(mc){
+  const overdueList = items.filter(i=>getStatus(i)==='overdue').sort((a,b)=>getDaysLeft(a)-getDaysLeft(b));
+  const soonList = items.filter(i=>getStatus(i)==='soon').sort((a,b)=>getDaysLeft(a)-getDaysLeft(b));
+  
+  mc.innerHTML = `
+    ${overdueList.length>0?`
+      <div class="card-title" style="color:#dc2626;margin-bottom:8px">🔴 เกินกำหนด (${overdueList.length})</div>
+      ${overdueList.map(it=>{
+        const d=getDaysLeft(it); const next=getNextCalib(it);
+        return `<div class="alert-item overdue">
+          <div class="alert-info">
+            <div class="name">${it.id} — ${it.name}</div>
+            <div class="detail">${it.room||''} · ${it.dept||''} · ครบกำหนด: ${next?fmtDate(next.toISOString()):'-'}</div>
+          </div>
+          <div class="alert-days over-text">เกิน ${Math.abs(d)} วัน</div>
+        </div>`;
+      }).join('')}
+    `:''}
+    ${soonList.length>0?`
+      <div class="card-title" style="color:#d97706;margin-top:16px;margin-bottom:8px">⚠️ ใกล้ครบกำหนด (${soonList.length})</div>
+      ${soonList.map(it=>{
+        const d=getDaysLeft(it); const next=getNextCalib(it);
+        return `<div class="alert-item soon">
+          <div class="alert-info">
+            <div class="name">${it.id} — ${it.name}</div>
+            <div class="detail">${it.room||''} · ${it.dept||''} · ครบกำหนด: ${next?fmtDate(next.toISOString()):'-'}</div>
+          </div>
+          <div class="alert-days warn-text">อีก ${d} วัน</div>
+        </div>`;
+      }).join('')}
+    `:''}
+    ${overdueList.length===0 && soonList.length===0?'<div style="text-align:center;padding:60px;color:#059669;font-size:16px">อุปกรณ์ทุกชิ้นอยู่ในกำหนด 🎉</div>':''}
+  `;
+}
+
+// ===== PRINT / EXPORT =====
+function renderPrint(mc){
+  const overdueList = items.filter(i=>getStatus(i)==='overdue');
+  const soonList = items.filter(i=>getStatus(i)==='soon');
+  
+  mc.innerHTML = `
+    <div class="export-section">
+      <h4>📥 Export รายการ</h4>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="exportAll()">📋 อุปกรณ์ทั้งหมด (${items.length})</button>
+        <button class="btn btn-danger btn-sm" onclick="exportOverdue()" ${overdueList.length===0?'disabled':''}>🔴 เกินกำหนด (${overdueList.length})</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportSoon()" ${soonList.length===0?'disabled':''}>⚠️ ใกล้ครบ (${soonList.length})</button>
+      </div>
+    </div>
+    <div class="export-section">
+      <h4>📅 Export แผนสอบเทียบ (เลือกช่วงเดือน)</h4>
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="form-group"><label>จากเดือน</label><select id="expFrom">${MONTHS_FULL.map((m,i)=>`<option value="${i}" ${i===0?'selected':''}>${m}</option>`).join('')}</select></div>
+        <div class="form-group"><label>ถึงเดือน</label><select id="expTo">${MONTHS_FULL.map((m,i)=>`<option value="${i}" ${i===11?'selected':''}>${m}</option>`).join('')}</select></div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="exportPlanRange()">📥 Export แผน</button>
+    </div>
+  `;
+}
+
+// ===== SETTINGS =====
+function renderSettings(mc){
+  const pin = localStorage.getItem(LS_PIN)||'1234';
+  mc.innerHTML = `
+    <div class="setting-section">
+      <h4>🔔 การแจ้งเตือน</h4>
+      <div class="form-group">
+        <label>แจ้งเตือนก่อนครบกำหนด (วัน)</label>
+        <input type="number" id="setAlertDays" value="${settings.alertDays}" min="1" max="365"/>
+      </div>
+      <div class="form-group">
+        <label>อีเมลผู้รับแจ้งเตือน</label>
+        <input type="email" id="setEmail" value="${settings.email||''}" placeholder="email@company.com"/>
+      </div>
+    </div>
+    <div class="setting-section">
+      <h4>🔒 ความปลอดภัย</h4>
+      <div class="form-group">
+        <label>PIN (4 หลัก)</label>
+        <input type="password" id="setPin" value="${pin}" maxlength="4" pattern="[0-9]{4}"/>
+      </div>
+    </div>
+    <div class="setting-section">
+      <h4>💾 ข้อมูลระบบ</h4>
+      <div style="font-size:13px;color:#6b7280">
+        <p>อุปกรณ์ทั้งหมด: <b>${items.length}</b> รายการ</p>
+        <p>ข้อมูลเก็บใน: localStorage (เครื่องนี้)</p>
+        <p style="margin-top:8px">
+          <button class="btn btn-danger btn-sm" onclick="if(confirm('ต้องการรีเซ็ตข้อมูลกลับเป็นค่าเริ่มต้น?')){localStorage.removeItem('${LS_ITEMS}');loadItems();saveItems();renderPage();toast('รีเซ็ตแล้ว')}">🗑️ รีเซ็ตข้อมูลเป็นค่าเริ่มต้น</button>
+        </p>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="saveSettingsForm()">💾 บันทึกการตั้งค่า</button>
+  `;
+}
+
+function saveSettingsForm(){
+  const days = parseInt(document.getElementById('setAlertDays').value)||30;
+  const email = document.getElementById('setEmail').value.trim();
+  const pin = document.getElementById('setPin').value.trim();
+  settings.alertDays = days;
+  settings.email = email;
+  saveSettings();
+  if(pin.length===4 && /^\d{4}$/.test(pin)){
+    localStorage.setItem(LS_PIN, pin);
+  }
+  toast('บันทึกการตั้งค่าแล้ว ✓');
+  renderNav();
+}
+
+// ===== MODAL: ADD/EDIT =====
+function openAddModal(){ editItem=null; showItemModal(); }
+function openEditModal(id){ editItem=items.find(i=>i.id===id)||null; showItemModal(); }
+
+function showItemModal(){
+  const it = editItem || {id:'',name:'',room:'',dept:'QC',interval:12,lastCalib:'',certs:[],note:'',resolution:'',tolerance:'',calibResult:'',docRef:''};
+  const isEdit = !!editItem;
+  
+  const overlay = document.createElement('div');
+  overlay.className='modal-overlay';
+  overlay.id='itemModal';
+  overlay.innerHTML=`
+    <div class="modal">
+      <h3>${isEdit?'แก้ไขอุปกรณ์':'เพิ่มรายการใหม่'}</h3>
+      <div class="form-row">
+        <div class="form-group"><label>รหัส *</label><input id="mId" value="${it.id}" ${isEdit?'readonly style="background:#f3f4f6"':''}/></div>
+        <div class="form-group"><label>ชื่อ *</label><input id="mName" value="${it.name}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>ห้อง</label><input id="mRoom" value="${it.room||''}"/></div>
+        <div class="form-group"><label>หมวด/แผนก</label><input id="mDept" value="${it.dept||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>ความถี่ (เดือน)</label><select id="mInterval">
+          ${[1,3,6,12,24].map(v=>`<option value="${v}" ${it.interval===v?'selected':''}>${intervalLabel(v)}</option>`).join('')}
+        </select></div>
+        <div class="form-group"><label>สอบเทียบล่าสุด</label><input type="date" id="mLastCalib" value="${it.lastCalib||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>ความละเอียด</label><input id="mResolution" value="${it.resolution||''}"/></div>
+        <div class="form-group"><label>ค่ายอมรับได้</label><input id="mTolerance" value="${it.tolerance||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>ผลสอบเทียบ</label><input id="mCalibResult" value="${it.calibResult||''}"/></div>
+        <div class="form-group"><label>เอกสารอ้างอิง</label><input id="mDocRef" value="${it.docRef||''}"/></div>
+      </div>
+      <div class="form-group"><label>หมายเหตุ</label><textarea id="mNote" rows="2">${it.note||''}</textarea></div>
+      <div class="form-group">
+        <label>ใบรับรองการสอบเทียบ (Cert)</label>
+        <div class="cert-zone" onclick="document.getElementById('certFileInput').click()">
+          📁 คลิกเพื่อเลือกไฟล์ (JPG, PNG, PDF · สูงสุด 5MB)
+          <input type="file" id="certFileInput" accept="image/*,.pdf" multiple style="display:none" onchange="handleCertUpload(event)"/>
+        </div>
+        <div class="cert-preview" id="certPreview">
+          ${(it.certs||[]).map((c,i)=>`<div style="position:relative"><img src="${c}" class="cert-thumb"/><button class="btn-icon" style="position:absolute;top:-4px;right:-4px;background:#fee2e2;border-radius:50%;width:18px;height:18px;font-size:10px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removeCert(${i})">✕</button></div>`).join('')}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="closeModal()">ยกเลิก</button>
+        <button class="btn btn-primary" onclick="saveItemForm(${isEdit})">${isEdit?'อัปเดต':'เพิ่มรายการ'}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+let tempCerts = [];
+
+function handleCertUpload(e){
+  const files = e.target.files;
+  Array.from(files).forEach(f=>{
+    if(f.size > 5*1024*1024){ toast('ไฟล์เกิน 5MB'); return; }
+    const reader = new FileReader();
+    reader.onload = ev => {
+      tempCerts.push(ev.target.result);
+      const preview = document.getElementById('certPreview');
+      if(preview){
+        preview.innerHTML += `<div style="position:relative"><img src="${ev.target.result}" class="cert-thumb"/></div>`;
+      }
+    };
+    reader.readAsDataURL(f);
+  });
+}
+
+function removeCert(idx){
+  if(editItem && editItem.certs){
+    editItem.certs.splice(idx,1);
+    saveItems();
+    const preview = document.getElementById('certPreview');
+    if(preview) preview.children[idx]?.remove();
+  }
+}
+
+function saveItemForm(isEdit){
+  const id = document.getElementById('mId').value.trim();
+  const name = document.getElementById('mName').value.trim();
+  if(!id||!name){ toast('กรุณากรอก รหัส และ ชื่อ'); return; }
+  
+  const data = {
+    id, name,
+    room: document.getElementById('mRoom').value.trim(),
+    dept: document.getElementById('mDept').value.trim(),
+    interval: parseInt(document.getElementById('mInterval').value),
+    lastCalib: document.getElementById('mLastCalib').value,
+    certs: isEdit ? (editItem.certs||[]).concat(tempCerts) : tempCerts.slice(),
+    note: document.getElementById('mNote').value.trim(),
+    resolution: document.getElementById('mResolution').value.trim(),
+    tolerance: document.getElementById('mTolerance').value.trim(),
+    calibResult: document.getElementById('mCalibResult').value.trim(),
+    docRef: document.getElementById('mDocRef').value.trim()
+  };
+
+  if(isEdit){
+    const idx = items.findIndex(i=>i.id===editItem.id);
+    if(idx>=0) items[idx] = data;
+  } else {
+    if(items.find(i=>i.id===id)){ toast('รหัสซ้ำ!'); return; }
+    items.push(data);
+  }
+  tempCerts = [];
+  saveItems();
+  closeModal();
+  renderPage(); renderNav();
+  toast(isEdit?'อัปเดตแล้ว ✓':'เพิ่มรายการแล้ว ✓');
+}
+
+function deleteItem(id){
+  if(!confirm(`ลบรายการ ${id} ?`)) return;
+  items = items.filter(i=>i.id!==id);
+  saveItems(); renderPage(); renderNav();
+  toast('ลบแล้ว');
+}
+
+function closeModal(){
+  tempCerts=[];
+  const m = document.getElementById('itemModal')||document.getElementById('importModal');
+  if(m) m.remove();
+}
+
+// ===== IMPORT MODAL =====
+function openImportModal(){
+  const overlay = document.createElement('div');
+  overlay.className='modal-overlay';
+  overlay.id='importModal';
+  overlay.innerHTML=`
+    <div class="modal">
+      <h3>📥 Import จาก Excel</h3>
+      <p style="font-size:13px;color:#6b7280;margin-bottom:12px">รองรับ .xlsx, .xls, .csv — ต้องมีคอลัมน์ 'รหัส' และ 'ชื่อ'</p>
+      <div class="cert-zone" onclick="document.getElementById('importFileInput').click()" id="importDropZone">
+        📁 ลาก & วางไฟล์ Excel หรือคลิกเพื่อเลือก
+        <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleImportFile(event)"/>
+      </div>
+      <div id="importPreview" style="margin-top:12px"></div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="closeModal()">ยกเลิก</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  
+  // Drag & drop
+  const zone = overlay.querySelector('#importDropZone');
+  zone.ondragover = e => { e.preventDefault(); zone.style.borderColor='#34d399'; };
+  zone.ondragleave = e => { zone.style.borderColor='#d1d5db'; };
+  zone.ondrop = e => { e.preventDefault(); zone.style.borderColor='#d1d5db'; if(e.dataTransfer.files.length) processImportFile(e.dataTransfer.files[0]); };
+}
+
+function handleImportFile(e){ if(e.target.files.length) processImportFile(e.target.files[0]); }
+
+function processImportFile(file){
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, {type:'binary',cellDates:true});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws);
+      
+      if(rows.length===0){ toast('ไฟล์ว่าง'); return; }
+      
+      const mapped = rows.map(c => ({
+        id: String(c.รหัส||c.ID||c.id||'').trim(),
+        name: String(c.ชื่อ||c.ชื่ออุปกรณ์||c.Name||'').trim(),
+        room: String(c.ห้อง||c.Room||'').trim(),
+        dept: String(c.หมวด||c.ประเภท||c.dept||c.Dept||'').trim(),
+        interval: parseInt(c.ความถี่||c.Interval||12)||12,
+        lastCalib: c.สอบเทียบล่าสุด ? fmtDateISO(c.สอบเทียบล่าสุด) : (c.LastCalib||''),
+        certs:[], note: String(c.หมายเหตุ||c.Note||'').trim(),
+        resolution: String(c.ความละเอียด||c.Resolution||'').trim(),
+        tolerance: String(c.ค่ายอมรับได้||c.Tolerance||'').trim(),
+        calibResult: String(c.ผลการสอบเทียบ||c.CalibResult||'').trim(),
+        docRef: String(c.เอกสารอ้างอิง||c.DocRef||'').trim()
+      })).filter(c=>c.id && c.name);
+
+      const preview = document.getElementById('importPreview');
+      preview.innerHTML = `
+        <p style="font-size:13px;font-weight:600">พบ ${mapped.length} รายการ</p>
+        <p style="font-size:12px;color:#6b7280;margin-bottom:8px">ตัวอย่าง 5 รายการแรก:</p>
+        <div class="tbl-wrap" style="max-height:200px;overflow-y:auto">
+          <table><thead><tr><th>รหัส</th><th>ชื่อ</th><th>ห้อง</th><th>ความถี่</th></tr></thead>
+          <tbody>${mapped.slice(0,5).map(r=>`<tr><td>${r.id}</td><td>${r.name}</td><td>${r.room}</td><td>${r.interval}</td></tr>`).join('')}</tbody></table>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="doImport('merge')">✅ อัปเดตรายการที่ซ้ำ + เพิ่มใหม่</button>
+          <button class="btn btn-danger btn-sm" onclick="doImport('replace')">🔄 แทนที่ทั้งหมดด้วยไฟล์ใหม่</button>
+        </div>
+      `;
+      window._importData = mapped;
+    } catch(err){ toast('อ่านไฟล์ไม่สำเร็จ: '+err.message); }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function doImport(mode){
+  const data = window._importData;
+  if(!data) return;
+  if(mode==='replace'){
+    items = data;
+  } else {
+    data.forEach(d=>{
+      const idx = items.findIndex(i=>i.id===d.id);
+      if(idx>=0){ items[idx] = {...items[idx], ...d, certs: items[idx].certs||[] }; }
+      else { items.push(d); }
+    });
+  }
+  saveItems(); closeModal(); renderPage(); renderNav();
+  toast(`Import สำเร็จ — ${data.length} รายการ`);
+}
+
+// ===== EXPORT FUNCTIONS =====
+function makeExportRows(list){
+  return list.map((it,i)=>{
+    const next = getNextCalib(it);
+    const days = getDaysLeft(it);
+    const st = getStatus(it);
+    return {
+      'ลำดับ':i+1, 'รหัส':it.id, 'ชื่อ':it.name, 'ห้อง':it.room||'', 'หมวด':it.dept||'',
+      'ความถี่':intervalLabel(it.interval),
+      'สอบเทียบล่าสุด':it.lastCalib||'',
+      'ครบกำหนด':next?next.toISOString().split('T')[0]:'',
+      'เหลือ/เกิน (วัน)':days, 'สถานะ':st==='overdue'?'เกินกำหนด':st==='soon'?'ใกล้ครบ':'ปกติ',
+      'ความละเอียด':it.resolution||'', 'ค่ายอมรับได้':it.tolerance||'',
+      'ผลการสอบเทียบ':it.calibResult||'', 'เอกสารอ้างอิง':it.docRef||'', 'หมายเหตุ':it.note||''
+    };
+  });
+}
+
+function downloadXLSX(rows, filename){
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Data');
+  // Auto width
+  const colW = Object.keys(rows[0]||{}).map(k => ({wch: Math.max(k.length*2, ...rows.map(r=>String(r[k]||'').length*1.5))}));
+  ws['!cols'] = colW;
+  XLSX.writeFile(wb, filename);
+}
+
+function exportAll(){ downloadXLSX(makeExportRows(items), `CalibTrack_All_${new Date().toISOString().split('T')[0]}.xlsx`); toast('Export สำเร็จ ✓'); }
+function exportOverdue(){ const list=items.filter(i=>getStatus(i)==='overdue'); if(!list.length){toast('ไม่มีรายการ');return;} downloadXLSX(makeExportRows(list),'CalibTrack_Overdue.xlsx'); toast('Export สำเร็จ ✓'); }
+function exportSoon(){ const list=items.filter(i=>getStatus(i)==='soon'); if(!list.length){toast('ไม่มีรายการ');return;} downloadXLSX(makeExportRows(list),'CalibTrack_DueSoon.xlsx'); toast('Export สำเร็จ ✓'); }
+
+function exportAnnualPlan(){
+  const year = new Date().getFullYear();
+  const rows = items.map((it,idx)=>{
+    const row = {'ลำดับ':idx+1,'รหัส':it.id,'ชื่อ':it.name,'หมวด':it.dept||''};
+    MONTHS_TH.forEach((m,mi)=>{
+      let isDue = false;
+      if(it.lastCalib){
+        const base = new Date(it.lastCalib);
+        for(let k=1;k<=24;k++){
+          const check = new Date(base);
+          check.setMonth(check.getMonth() + it.interval*k);
+          if(check.getMonth()===mi && check.getFullYear()===year){ isDue=true; break; }
+        }
+      }
+      row[m] = isDue ? '●' : '';
+    });
+    row['สอบเทียบล่าสุด'] = it.lastCalib||'';
+    row['ความถี่'] = intervalLabel(it.interval);
+    return row;
+  });
+  downloadXLSX(rows, `CalibPlan_${year+543}.xlsx`);
+  toast('Export แผนสำเร็จ ✓');
+}
+
+function exportPlanRange(){
+  const from = parseInt(document.getElementById('expFrom').value);
+  const to = parseInt(document.getElementById('expTo').value);
+  const year = new Date().getFullYear();
+  const months = [];
+  for(let i=from;i<=to;i++) months.push(i);
+  
+  const rows = items.map((it,idx)=>{
+    const row = {'ลำดับ':idx+1,'รหัส':it.id,'ชื่อ':it.name,'หมวด':it.dept||''};
+    months.forEach(mi=>{
+      let isDue = false;
+      if(it.lastCalib){
+        const base = new Date(it.lastCalib);
+        for(let k=1;k<=24;k++){
+          const check = new Date(base);
+          check.setMonth(check.getMonth() + it.interval*k);
+          if(check.getMonth()===mi && check.getFullYear()===year){ isDue=true; break; }
+        }
+      }
+      row[MONTHS_TH[mi]] = isDue ? '●' : '';
+    });
+    return row;
+  });
+  downloadXLSX(rows, `CalibPlan_${MONTHS_TH[from]}-${MONTHS_TH[to]}_${year+543}.xlsx`);
+  toast('Export แผนสำเร็จ ✓');
+}
+
+// ===== INIT =====
+function init(){
+  loadItems();
+  loadSettings();
+  initPIN();
+  renderNav();
+  renderPage();
+}
+init();
+</script>
+</body>
+</html>
