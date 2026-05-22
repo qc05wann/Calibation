@@ -201,6 +201,7 @@ tr:hover td{background:#f0fdf4}
     <div class="pin-dots" id="pinDots"></div>
     <div class="pin-pad" id="pinPad"></div>
     <div class="pin-msg" id="pinMsg"></div>
+    <div style="margin-top:24px"><a href="#" onclick="resetPIN(event)" style="color:rgba(255,255,255,.4);font-size:12px;text-decoration:underline">ลืม PIN? รีเซ็ตเป็น 1234</a></div>
   </div>
 </div>
 
@@ -339,6 +340,18 @@ function handlePinKey(k){
 }
 
 function doLogout(){ sessionStorage.removeItem(LS_SESSION); pinInput=''; document.getElementById('pinScreen').style.display='flex'; renderPIN(); }
+
+function resetPIN(e){
+  e.preventDefault();
+  if(confirm('รีเซ็ต PIN เป็น 1234 ?')){
+    localStorage.setItem(LS_PIN,'1234');
+    pinInput=''; pinAttempts=0; pinLocked=false;
+    document.getElementById('pinMsg').textContent='รีเซ็ตแล้ว — PIN ใหม่คือ 1234';
+    document.getElementById('pinMsg').className='pin-msg';
+    document.getElementById('pinMsg').style.color='#6ee7b7';
+    renderPIN();
+  }
+}
 
 // ===== SIDEBAR =====
 function renderNav(){
