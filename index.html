@@ -733,7 +733,7 @@ function renderDashboard(mc){
   const total = items.length;
   const overdue = items.filter(i=>getStatus(i)==='overdue').length;
   const soon = items.filter(i=>getStatus(i)==='soon').length;
-  const hasCert = items.filter(i=>i.certs&&i.certs.length>0).length;
+  const hasCert = items.filter(i=>i.docRef&&i.docRef!=='').length;
   const ok = total - overdue - soon;
 
   mc.innerHTML = `
