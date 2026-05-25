@@ -579,6 +579,7 @@ function resetPIN(e){
   if(confirm('รีเซ็ต PIN เป็น 1234 ?')){
     localStorage.setItem(LS_PIN,'1234');
     pinInput=''; pinAttempts=0; pinLocked=false;
+    savePinToCloud();
     document.getElementById('pinMsg').textContent='รีเซ็ตแล้ว — PIN ใหม่คือ 1234';
     document.getElementById('pinMsg').className='pin-msg';
     document.getElementById('pinMsg').style.color='#6ee7b7';
@@ -963,9 +964,10 @@ function saveSettingsForm(){
   saveSettings();
   if(pin.length===4 && /^\d{4}$/.test(pin)){
     localStorage.setItem(LS_PIN, pin);
-    savePinToCloud();
+    savePinToCloud().then(()=>{ toast('บันทึกการตั้งค่า + PIN sync แล้ว ✓'); });
+  } else {
+    toast('บันทึกการตั้งค่าแล้ว ✓');
   }
-  toast('บันทึกการตั้งค่าแล้ว ✓');
   renderNav();
 }
 
@@ -1552,16 +1554,22 @@ async function init(){
   // 1. Load from localStorage first (fast)
   loadItems();
   loadSettings();
+  
+  // 2. Initialize Firebase BEFORE PIN check
+  initFirebase();
+  
+  // 3. Load PIN from cloud first so initPIN uses the latest
+  if(fbReady){
+    await loadPinFromCloud();
+  }
+  
+  // 4. Now init PIN (uses cloud-synced localStorage)
   initPIN();
   renderNav();
   renderPage();
   
-  // 2. Initialize Firebase
-  initFirebase();
-  
-  // 3. Load from cloud (overrides local if available)
+  // 5. Load data from cloud
   if(fbReady){
-    await loadPinFromCloud();
     const cloudLoaded = await loadItemsFromCloud();
     await loadSettingsFromCloud();
     
@@ -1573,7 +1581,7 @@ async function init(){
       await savePinToCloud();
     }
     
-    // 4. Start real-time listener
+    // 6. Start real-time listener
     startRealtimeSync();
     
     renderNav();
