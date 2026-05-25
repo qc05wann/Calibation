@@ -9,6 +9,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚙️</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100dvh;font-family:'Sarabun',system-ui,sans-serif;background:#f9fafb;overflow:hidden}
@@ -165,6 +167,38 @@ tr:hover td{background:#f0fdf4}
 /* Print */
 .export-section{border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:12px}
 .export-section h4{font-size:14px;font-weight:700;margin-bottom:12px}
+
+/* Sync status */
+.sync-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.sync-dot.online{background:#34d399}
+.sync-dot.offline{background:#f87171}
+.sync-dot.syncing{background:#fbbf24;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* Calendar View */
+.cal-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.cal-month{background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden}
+.cal-month-head{background:#065f46;color:#fff;padding:8px;text-align:center;font-weight:600;font-size:14px}
+.cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);font-size:10px;color:#6b7280;text-align:center;padding:4px 4px 0}
+.cal-days{display:grid;grid-template-columns:repeat(7,1fr);padding:4px;gap:2px}
+.cal-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:11px;border-radius:4px;position:relative;cursor:default}
+.cal-day.empty{visibility:hidden}
+.cal-day.today{font-weight:700;border:1px solid #059669}
+.cal-day.has-due{background:#d1fae5;color:#065f46;font-weight:600;cursor:pointer}
+.cal-day.has-due:hover{background:#a7f3d0}
+.cal-day.has-overdue{background:#fee2e2;color:#991b1b;font-weight:600;cursor:pointer}
+.cal-day.has-overdue:hover{background:#fecaca}
+.cal-day.has-warn{background:#fef3c7;color:#92400e;font-weight:600;cursor:pointer}
+.cal-day.has-warn:hover{background:#fde68a}
+.cal-day .dot-count{position:absolute;top:-2px;right:-2px;background:#059669;color:#fff;font-size:8px;width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.cal-day.has-overdue .dot-count{background:#dc2626}
+.cal-day.has-warn .dot-count{background:#d97706}
+.cal-tooltip{position:fixed;background:#1f2937;color:#fff;padding:8px 12px;border-radius:8px;font-size:12px;z-index:60;max-width:280px;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.view-toggle{display:inline-flex;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden}
+.view-toggle button{padding:6px 14px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:#fff;color:#6b7280;font-family:inherit;transition:all .15s}
+.view-toggle button.active{background:#059669;color:#fff}
+.view-toggle button:hover:not(.active){background:#f3f4f6}
+@media(max-width:768px){.cal-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -179,7 +213,10 @@ tr:hover td{background:#f0fdf4}
     <h1>CalibTrack</h1>
   </div>
   <nav class="sidebar-nav" id="sidebarNav"></nav>
-  <div class="sidebar-footer">v2.0 · Single-File Edition</div>
+  <div class="sidebar-footer">
+    <div id="syncStatus"><span class="sync-dot syncing"></span>กำลังเชื่อมต่อ...</div>
+    <div style="margin-top:4px">v3.0 · Firebase Edition</div>
+  </div>
 </aside>
 
 <div class="main">
@@ -215,6 +252,195 @@ const LS_PIN = 'ct_pin_v1';
 const LS_SESSION = 'ct_session_v1';
 const LS_SETTINGS = 'ct_settings_v1';
 
+// ===== FIREBASE =====
+const firebaseConfig = {
+  apiKey: "AIzaSyB-PmFBv-YKPoQsTBNFMTzQ1Z0JTK3od0s",
+  authDomain: "calibtrack-wann.firebaseapp.com",
+  projectId: "calibtrack-wann",
+  storageBucket: "calibtrack-wann.firebasestorage.app",
+  messagingSenderId: "770336609477",
+  appId: "1:770336609477:web:612bf2ba236f8059034cac"
+};
+
+let db = null;
+let fbReady = false;
+let unsubListener = null;
+
+function initFirebase(){
+  try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
+    fbReady = true;
+    setSyncStatus('online','Firebase เชื่อมต่อแล้ว');
+    console.log('Firebase connected');
+  } catch(e){
+    console.error('Firebase init error:', e);
+    fbReady = false;
+    setSyncStatus('offline','ออฟไลน์ (localStorage)');
+  }
+}
+
+function setSyncStatus(state, text){
+  const el = document.getElementById('syncStatus');
+  if(el) el.innerHTML = `<span class="sync-dot ${state}"></span>${text}`;
+}
+
+// Strip large base64 cert data for Firestore (keep URLs and small data)
+function stripCertsForCloud(item){
+  const clone = JSON.parse(JSON.stringify(item));
+  // Keep cert count but strip large base64 to avoid 1MB doc limit
+  if(clone.certs && clone.certs.length > 0){
+    clone.certCount = clone.certs.length;
+    clone.certs = clone.certs.map(c => {
+      if(c && c.length > 200000) return '[[LOCAL]]'; // Flag as local-only
+      return c; // Keep small certs
+    });
+  }
+  // Same for calibHistory certs
+  if(clone.calibHistory){
+    clone.calibHistory = clone.calibHistory.map(h => {
+      const hc = {...h};
+      if(hc.certs) hc.certs = hc.certs.map(c => c && c.length > 200000 ? '[[LOCAL]]' : c);
+      return hc;
+    });
+  }
+  return clone;
+}
+
+// ===== FIRESTORE SYNC =====
+async function saveItemsToCloud(){
+  if(!fbReady || !db) return;
+  setSyncStatus('syncing','กำลัง sync...');
+  try {
+    const batch = db.batch();
+    const col = db.collection('equipments');
+    
+    // Get existing docs to find deletions
+    const snapshot = await col.get();
+    const existingIds = new Set();
+    snapshot.forEach(doc => existingIds.add(doc.id));
+    
+    // Update/create items
+    const currentIds = new Set();
+    items.forEach(it => {
+      currentIds.add(it.id);
+      const ref = col.doc(it.id);
+      batch.set(ref, stripCertsForCloud(it));
+    });
+    
+    // Delete removed items
+    existingIds.forEach(id => {
+      if(!currentIds.has(id)){
+        batch.delete(col.doc(id));
+      }
+    });
+    
+    await batch.commit();
+    setSyncStatus('online','Sync สำเร็จ ✓');
+  } catch(e){
+    console.error('Cloud save error:', e);
+    setSyncStatus('offline','Sync ผิดพลาด');
+  }
+}
+
+async function loadItemsFromCloud(){
+  if(!fbReady || !db) return false;
+  setSyncStatus('syncing','กำลังโหลด...');
+  try {
+    const snapshot = await db.collection('equipments').get();
+    if(snapshot.empty) return false;
+    
+    const cloudItems = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      // Merge local certs back if cloud has [[LOCAL]] placeholders
+      const localItem = items.find(i => i.id === data.id);
+      if(data.certs){
+        data.certs = data.certs.map((c, idx) => {
+          if(c === '[[LOCAL]]' && localItem && localItem.certs && localItem.certs[idx]){
+            return localItem.certs[idx];
+          }
+          return c === '[[LOCAL]]' ? null : c;
+        }).filter(Boolean);
+      }
+      if(data.calibHistory){
+        data.calibHistory.forEach((h, hi) => {
+          if(h.certs){
+            h.certs = h.certs.map((c, ci) => {
+              if(c === '[[LOCAL]]' && localItem && localItem.calibHistory && localItem.calibHistory[hi]){
+                return localItem.calibHistory[hi].certs?.[ci] || null;
+              }
+              return c === '[[LOCAL]]' ? null : c;
+            }).filter(Boolean);
+          }
+        });
+      }
+      cloudItems.push(data);
+    });
+    
+    items = cloudItems;
+    items.forEach(it => { if(!it.certs) it.certs=[]; if(!it.category) it.category=''; if(!it.range) it.range=''; if(!it.resolution) it.resolution=''; if(!it.calibRange) it.calibRange=''; if(!it.tolerance) it.tolerance=''; if(!it.calibResult) it.calibResult=''; if(!it.docRef) it.docRef=''; if(!it.calibHistory) it.calibHistory=[]; });
+    localStorage.setItem(LS_ITEMS, JSON.stringify(items));
+    setSyncStatus('online','Firebase เชื่อมต่อแล้ว');
+    return true;
+  } catch(e){
+    console.error('Cloud load error:', e);
+    setSyncStatus('offline','โหลดไม่สำเร็จ — ใช้ข้อมูลในเครื่อง');
+    return false;
+  }
+}
+
+function startRealtimeSync(){
+  if(!fbReady || !db) return;
+  if(unsubListener) unsubListener();
+  unsubListener = db.collection('equipments').onSnapshot(snapshot => {
+    if(snapshot.metadata.hasPendingWrites) return; // Ignore local writes
+    const cloudItems = [];
+    snapshot.forEach(doc => cloudItems.push(doc.data()));
+    if(cloudItems.length > 0){
+      // Preserve local certs
+      cloudItems.forEach(ci => {
+        const local = items.find(i => i.id === ci.id);
+        if(ci.certs) ci.certs = ci.certs.map((c,idx) => c === '[[LOCAL]]' && local?.certs?.[idx] ? local.certs[idx] : (c==='[[LOCAL]]'?null:c)).filter(Boolean);
+        if(ci.calibHistory) ci.calibHistory.forEach((h,hi) => { if(h.certs) h.certs = h.certs.map((c,ci2) => c==='[[LOCAL]]'&&local?.calibHistory?.[hi]?.certs?.[ci2]?local.calibHistory[hi].certs[ci2]:(c==='[[LOCAL]]'?null:c)).filter(Boolean); });
+      });
+      items = cloudItems;
+      items.forEach(it => { if(!it.certs) it.certs=[]; if(!it.category) it.category=''; if(!it.range) it.range=''; if(!it.resolution) it.resolution=''; if(!it.calibRange) it.calibRange=''; if(!it.tolerance) it.tolerance=''; if(!it.calibResult) it.calibResult=''; if(!it.docRef) it.docRef=''; if(!it.calibHistory) it.calibHistory=[]; });
+      localStorage.setItem(LS_ITEMS, JSON.stringify(items));
+      renderPage(); renderNav();
+    }
+    setSyncStatus('online','Firebase เชื่อมต่อแล้ว');
+  }, err => {
+    console.error('Realtime listener error:', err);
+    setSyncStatus('offline','ขาดการเชื่อมต่อ');
+  });
+}
+
+async function saveSettingsToCloud(){
+  if(!fbReady || !db) return;
+  try { await db.collection('config').doc('settings').set(settings); } catch(e){ console.error(e); }
+}
+async function loadSettingsFromCloud(){
+  if(!fbReady || !db) return false;
+  try {
+    const doc = await db.collection('config').doc('settings').get();
+    if(doc.exists){ settings = {...DEFAULT_SETTINGS, ...doc.data()}; localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); return true; }
+  } catch(e){ console.error(e); }
+  return false;
+}
+async function savePinToCloud(){
+  if(!fbReady || !db) return;
+  try { await db.collection('config').doc('pin').set({pin: localStorage.getItem(LS_PIN)||'1234'}); } catch(e){ console.error(e); }
+}
+async function loadPinFromCloud(){
+  if(!fbReady || !db) return;
+  try {
+    const doc = await db.collection('config').doc('pin').get();
+    if(doc.exists && doc.data().pin) localStorage.setItem(LS_PIN, doc.data().pin);
+  } catch(e){ console.error(e); }
+}
+
 // ===== DEFAULT DATA =====
 const DEFAULT_ITEMS = [{"id": "MWC-FL-10", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "30 kg", "resolution": "0.001 KG", "calibRange": "0-30 KG", "tolerance": "+-0.005 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-FL-12", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "30 kg", "resolution": "0.001 KG", "calibRange": "0-30 KG", "tolerance": "+-0.005 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-FL-13", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "510 g", "resolution": "0.1 g", "calibRange": "0-500 g", "tolerance": "+-0.3 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-FP-10", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "510 g", "resolution": "0.1 g", "calibRange": "0-500 g", "tolerance": "+-0.3 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-FP-11", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "620 g", "resolution": "0.01 g", "calibRange": "0-500 g", "tolerance": "+-0.10 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-FP-12", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "620 g", "resolution": "0.01 g", "calibRange": "0-500 g", "tolerance": "+-0.10 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-FP-13", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "510 g", "resolution": "0.1 g", "calibRange": "0-500 g", "tolerance": "+-0.3 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-FP-14", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "510 g", "resolution": "0.1 g", "calibRange": "0-500 g", "tolerance": "+-0.3 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-FP-15", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2025-09-21", "certs": [], "note": "", "range": "0-30 kg", "resolution": "0.001 KG", "calibRange": "0-25 KG", "tolerance": "+-0.005 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MC-09", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "150 kg", "resolution": "0.01 KG", "calibRange": "0-150 KG", "tolerance": "+-0.05 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MC-10", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "150 kg", "resolution": "0.01 KG", "calibRange": "0-150 KG", "tolerance": "+-0.05 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MC-11", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2025-08-14", "certs": [], "note": "", "range": "300 kg", "resolution": "0.02 KG", "calibRange": "0-290 KG", "tolerance": "+-0.05 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-ML-02", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "10 kg", "resolution": "0.001 KG", "calibRange": "0-10 KG", "tolerance": "+-0.003 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-ML-03", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "600 g", "resolution": "0.01 g", "calibRange": "0-600 g", "tolerance": "+-0.10 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-ML-04", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "620 g", "resolution": "0.01 g", "calibRange": "0-500 g", "tolerance": "+-0.10 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-ML-05", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "30 kg", "resolution": "0.001 KG", "calibRange": "0-30 KG", "tolerance": "+-0.005 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MP-03", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "150 kg", "resolution": "0.01 KG", "calibRange": "0-150 KG", "tolerance": "+-0.03 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-10", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "60 kg", "resolution": "0.005 KG", "calibRange": "0-60 KG", "tolerance": "+-0.010 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-16", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "150 kg", "resolution": "0.01 KG", "calibRange": "0-150 KG", "tolerance": "+-0.03 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-17", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "150 kg", "resolution": "0.01 KG", "calibRange": "0-150 KG", "tolerance": "+-0.03 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-18", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "150 kg", "resolution": "0.01 KG", "calibRange": "0-150 KG", "tolerance": "+-0.03 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-21", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "60 kg", "resolution": "0.01 KG", "calibRange": "0-60 KG", "tolerance": "+-0.010 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-22", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "150 kg", "resolution": "0.01 KG", "calibRange": "0-150 KG", "tolerance": "+-0.30 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-23", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "2200 g", "resolution": "0.01 g", "calibRange": "0-2200 g", "tolerance": "+-0.05 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-24", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "2200 g", "resolution": "0.01 g", "calibRange": "0-2200 g", "tolerance": "+-0.05 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-25", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "2200 g", "resolution": "0.01 g", "calibRange": "0-2200 g", "tolerance": "+-0.05 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-27", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "300 kg", "resolution": "0.02 KG", "calibRange": "0-300 kg", "tolerance": "+-0.05 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-28", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "150 kg", "resolution": "0.01 KG", "calibRange": "0-150 KG", "tolerance": "+-0.05 KG", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-29", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "2200 g", "resolution": "0.01 g", "calibRange": "0-2200 g", "tolerance": "+-0.05 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-30", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "15 kg", "resolution": "0.001 kg", "calibRange": "0-15 kg", "tolerance": "+-0.003 kg", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-31", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "2000 kg", "resolution": "0.5 kg", "calibRange": "200-2000 kg", "tolerance": "+-1.5 kg", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-32", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "620 g", "resolution": "0.001 g", "calibRange": "0-500 g", "tolerance": "+-0.010 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-MH-33", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "200 kg", "resolution": "0.01 kg", "calibRange": "0-200 kg", "tolerance": "+-0.05 kg", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-RD-04", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "1000 g", "resolution": "0.01 g", "calibRange": "0-1000 g", "tolerance": "+-0.010 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-RD-05", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "1500 g", "resolution": "0.02 g", "calibRange": "0-1500 g", "tolerance": "+-0.10 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-RD-06", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "2200 g", "resolution": "0.01 g", "calibRange": "0-2200 g", "tolerance": "+-0.05 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-RD-07", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "4200 g", "resolution": "0.01 g", "calibRange": "0-4000 g", "tolerance": "+-0.04 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-RD-08", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "300 g", "resolution": "0.001 g", "calibRange": "0-300 g", "tolerance": "+-0.010 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-02", "name": "Stainless Weight", "category": "", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "10 g", "resolution": "", "calibRange": "10 g", "tolerance": "+-0.2 mg", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-03", "name": "Stainless Weight", "category": "", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "100 g", "resolution": "", "calibRange": "100 g", "tolerance": "+-0.5 mg", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-04", "name": "Stainless Weight", "category": "", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "1 kg", "resolution": "", "calibRange": "1 kg", "tolerance": "+-50 mg", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-06", "name": "Stainless Weight", "category": "", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "20 kg", "resolution": "", "calibRange": "20 kg", "tolerance": "+-1 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-07", "name": "Stainless Weight", "category": "", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "20 kg", "resolution": "", "calibRange": "20 kg", "tolerance": "+-1 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-08", "name": "Stainless Weight", "category": "", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "10 kg", "resolution": "", "calibRange": "10 kg", "tolerance": "+-0.5 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-12", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "1000 g", "resolution": "0.001 g", "calibRange": "0-1000 g", "tolerance": "+-0.010 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-12", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "2200 g", "resolution": "0.01 g", "calibRange": "0-2200 g", "tolerance": "+-0.03 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-16", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "2000 g", "resolution": "0.01 g", "calibRange": "0-2000 g", "tolerance": "+-0.05 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-18", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "2000 g", "resolution": "0.01 g", "calibRange": "0-2000 g", "tolerance": "+-0.05 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-19", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "30 kg", "resolution": "0.001 kg", "calibRange": "0-30 kg", "tolerance": "+-0.005 kg", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-20", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "2200 g", "resolution": "0.01 g", "calibRange": "0-2200 g", "tolerance": "+-0.05 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-21", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "510 g", "resolution": "0.01 g", "calibRange": "0-510 g", "tolerance": "+-0.3 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-22", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "510 g", "resolution": "0.01 g", "calibRange": "0-510 g", "tolerance": "+-0.3 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-23", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-08-01", "certs": [], "note": "", "range": "1500 g", "resolution": "0.2 g", "calibRange": "0-1500 g", "tolerance": "+-0.2 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-24", "name": "Electric Balance", "category": "เครื่องชั่ง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "620 g", "resolution": "0.01 g", "calibRange": "0-500 g", "tolerance": "+-0.1 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MWC-QA-05", "name": "Stainless Weight", "category": "", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "20 kg", "resolution": "", "calibRange": "20 kg", "tolerance": "+-1 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MC-08A", "name": "Temperature Indicator with probe", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "", "resolution": "", "calibRange": "0-90 °C", "tolerance": "+-2 g", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MC-08/1", "name": "Tachometer", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "540-3600 rpm", "resolution": "", "calibRange": "540-3600 rpm", "tolerance": "+-10 rpm", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MC-08/2", "name": "Tachometer", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "12-60 rpm", "resolution": "", "calibRange": "12-60 rpm", "tolerance": "+-5 rpm", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MC-14/1", "name": "Tachometer", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "6.30-45 rpm", "resolution": "", "calibRange": "6.30-25 rpm", "tolerance": "+-1 rpm", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MC-14/2", "name": "Tachometer", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "18.80-120.3 rpm", "resolution": "", "calibRange": "18.80-60 rpm", "tolerance": "+-2 rpm", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MC-14A1", "name": "Temperature Indicator with probe", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "", "resolution": "", "calibRange": "25 °C", "tolerance": "+-2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MC-14A2", "name": "Temperature Indicator with probe", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "", "resolution": "", "calibRange": "25 °C", "tolerance": "+-2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MC-14B", "name": "Temperature Indicator with probe", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "", "resolution": "", "calibRange": "25 °C", "tolerance": "+-2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MC-14C", "name": "Temperature Indicator with probe", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "", "resolution": "", "calibRange": "25 °C", "tolerance": "+-2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MC-15/1", "name": "Temperature Indicator with probe", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "", "resolution": "", "calibRange": "25 °C", "tolerance": "+-2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MC-15/2", "name": "Tachometer", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "18.80-120.3 rpm", "resolution": "", "calibRange": "18.80-60 rpm", "tolerance": "+-1 rpm", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "PT-MC-02/1", "name": "Flow Meter", "category": "", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "", "resolution": "0.01 kg", "calibRange": "1-400 kg", "tolerance": "+-1 %", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "PT-MC-02/2", "name": "Flow Meter", "category": "", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "", "resolution": "0.01 kg", "calibRange": "1-400 kg", "tolerance": "+-1 %", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "PT-MC-02/3", "name": "Flow Meter", "category": "", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "", "resolution": "0.01 kg", "calibRange": "1-400 kg", "tolerance": "+-1 %", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MGC-PP-01", "name": "Pressure Gauge", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "", "resolution": "50 psi", "calibRange": "0-1400 psi", "tolerance": "+-50 psi", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MGC-PP-02", "name": "Pressure Gauge", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "", "resolution": "50 psi", "calibRange": "0-1500 psi", "tolerance": "+-50 psi", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MGC-PP-03", "name": "Pressure Gauge", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "", "resolution": "50 psi", "calibRange": "0-1400 psi", "tolerance": "+-50 psi", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MGC-PP-04", "name": "Pressure Gauge", "category": "", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "", "resolution": "50 psi", "calibRange": "0-1400 psi", "tolerance": "+-50 psi", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MGC-PP-05", "name": "Pressure Gauge", "category": "", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "", "resolution": "50 psi", "calibRange": "0-1400 psi", "tolerance": "+-50 psi", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MGC-PP-06", "name": "Pressure Gauge", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "", "resolution": "50 psi", "calibRange": "0-1400 psi", "tolerance": "+-50 psi", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MGC-PP-07", "name": "Pressure Gauge", "category": "", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "", "resolution": "50 psi", "calibRange": "0-1400 psi", "tolerance": "+-50 psi", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MGC-PP-08", "name": "Pressure Gauge", "category": "", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "", "resolution": "20 psi", "calibRange": "0-1400 psi", "tolerance": "+-50 psi", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "ILC-PP-01", "name": "Indicator with load cell", "category": "", "interval": 12, "lastCalib": "2025-06-30", "certs": [], "note": "", "range": "", "resolution": "1 kgf", "calibRange": "0-300 kgf", "tolerance": "+-50 kgf", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MP-02", "name": "High speed mixer/Granulator", "category": "ใบพัดข้าง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "high/low speed", "resolution": "", "calibRange": "high/low speed", "tolerance": "", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MP-02", "name": "High speed mixer/Granulator", "category": "ใบพัดกลาง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "high/low speed", "resolution": "", "calibRange": "high/low speed", "tolerance": "", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MP-03", "name": "High speed mixer/Granulator", "category": "ใบพัดข้าง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "high/low speed", "resolution": "", "calibRange": "high/low speed", "tolerance": "", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MP-03", "name": "High speed mixer/Granulator", "category": "ใบพัดกลาง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "high/low speed", "resolution": "", "calibRange": "high/low speed", "tolerance": "", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MP-05", "name": "High speed mixer/Granulator", "category": "ใบพัดกลาง", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "300-1500 rpm", "resolution": "", "calibRange": "300-1400 rpm", "tolerance": "+-10 rpm", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MX-MP-15", "name": "High speed mixing machine", "category": "เครื่องผสม", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "300-1500 rpm", "resolution": "", "calibRange": "300-1400 rpm", "tolerance": "+-10 rpm", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-QA-03", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "10-99%RH, (-10)-60 °C", "resolution": "1%RH,1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-QA-04", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "10-99%RH, (-10)-60 °C", "resolution": "1%RH,1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-QA-07", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "20-95%RH, (-10)-50 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-QA-08", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "10-99%RH, (-50)-70 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-QA-09", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "10-99%RH, (-50)-70 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-QA-10", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2025-09-22", "certs": [], "note": "", "range": "10-99%RH, (-50)-70 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-WH-03", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "10-99%RH, (-10)-60 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-WH-04", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "10-99%RH, (-10)-60 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-WH-05", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "10-99%RH, (-10)-60 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-WH-07", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "10-99%RH, (-10)-60 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-WH-08", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "10-99%RH, (-10)-60 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-WH-09", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "10-99%RH, (-10)-60 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-WH-11", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "10-99%RH, (-50)-70 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-WC-03", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "20-95%RH, (-10)-50 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-WC-04", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "20-95%RH, (-10)-50 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-WC-05", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2025-09-22", "certs": [], "note": "", "range": "10-99%RH, (-50)-70 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-WC-06", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2025-09-22", "certs": [], "note": "", "range": "10-99%RH, (-50)-70 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-ML-03", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "20-95%RH, (-10)-50 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-ML-04", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "10-99%RH, (-50)-70 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MHC-ML-04", "name": "Digital thermo-Hydrometer", "category": "เครื่องวัดอุณภูมิ-ความชื้น", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "10-99%RH, (-50)-70 °C", "resolution": "1%RH,0.1 °C", "calibRange": "40-80%RH, 20-40 °C", "tolerance": "+-15%RH,2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MTC-QA-01", "name": "Digital thermometer with probe", "category": "เครื่องวัดอุณภูมิ", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "0-100 °C", "resolution": "0.1 °C", "calibRange": "25 °C", "tolerance": "+-1 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MTC-QA-02", "name": "Digital thermometer with probe", "category": "เครื่องวัดอุณภูมิ", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "0-100 °C", "resolution": "0.1 °C", "calibRange": "25 °C", "tolerance": "+-1 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MTC-QA-03", "name": "Digital thermometer with probe", "category": "เครื่องวัดอุณภูมิ", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "0-100 °C", "resolution": "0.1 °C", "calibRange": "2-8 °C", "tolerance": "+-1 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MTC-QA-04", "name": "Digital thermometer with probe", "category": "เครื่องวัดอุณภูมิ", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "(-20 °C)-(-50 °C)", "resolution": "0.1 °C", "calibRange": "-15°C - (-20 °C)", "tolerance": "+-1 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MTC-QA-05", "name": "Digital thermometer with probe", "category": "เครื่องวัดอุณภูมิ", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "0-10 °C", "resolution": "0.1 °C", "calibRange": "4-8 °C", "tolerance": "+-1 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MTC-RD-01", "name": "Digital thermometer with probe", "category": "เครื่องวัดอุณภูมิ", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "0-100 °C", "resolution": "0.1 °C", "calibRange": "25 °C", "tolerance": "+-1 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MTC-RD-02", "name": "Digital thermometer with probe", "category": "เครื่องวัดอุณภูมิ", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "-50-300 °C", "resolution": "0.1 °C", "calibRange": "0-100 °C", "tolerance": "+-2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MTC-MC-01", "name": "Digital thermometer with probe", "category": "เครื่องวัดอุณภูมิ", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "0-100 °C", "resolution": "0.1 °C", "calibRange": "25 °C", "tolerance": "+-1 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MTC-MC-02", "name": "Digital thermometer with probe", "category": "เครื่องวัดอุณภูมิ", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "-50-1300 °C", "resolution": "0.1 °C", "calibRange": "20-90 °C", "tolerance": "+-1 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MTC-WH-01", "name": "Digital thermometer with probe", "category": "เครื่องวัดอุณภูมิ", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "0-10 °C", "resolution": "0.1 °C", "calibRange": "4-8 °C", "tolerance": "+-0.5 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MTC-ML-01", "name": "Digital thermometer with probe", "category": "เครื่องวัดอุณภูมิ", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "0-100 °C", "resolution": "0.1 °C", "calibRange": "25-90 °C", "tolerance": "+-1 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MPC-QA-01", "name": "pH meter with prope", "category": "เครื่องวัดกรด-ด่าง", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "14", "resolution": "0.01", "calibRange": "1-14", "tolerance": "+-0.20", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MPC-QA-03", "name": "pH meter with prope", "category": "เครื่องวัดกรด-ด่าง", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "14", "resolution": "0.01", "calibRange": "1-14", "tolerance": "+-0.20", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MPC-QA-04", "name": "pH meter with prope", "category": "เครื่องวัดกรด-ด่าง", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "14", "resolution": "0.01", "calibRange": "1-14", "tolerance": "+-0.20", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MCC-QA-02", "name": "Conductivity meter", "category": "เครื่องวัดการนำไฟฟ้า", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "0-200 mS/cm", "resolution": "0.01µS/cm-0.1µS/cm", "calibRange": "0-100 µS/cm", "tolerance": "+-20 µS/cm", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MCC-QA-04", "name": "Digital Caliper", "category": "เครื่องมือวัดขนาด", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "0-150 mm", "resolution": "0.01 mm", "calibRange": "0-150", "tolerance": "+- 0.05", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MCC-QA-05", "name": "Digital Caliper", "category": "เครื่องมือวัดขนาด", "interval": 12, "lastCalib": "2025-08-04", "certs": [], "note": "", "range": "0-150 mm", "resolution": "0.01 mm", "calibRange": "0-150", "tolerance": "+- 0.05", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MMB-QA-01", "name": "Moisture Balance", "category": "เครื่องวัดความชื้น", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "0-100 °C,0-100g,0-20%", "resolution": "1 °C,0.005g,0.050%", "calibRange": "0-100 °C,0-10g,0-5%", "tolerance": "+-5 °C,0.03g,0.1%", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MON-QA-01", "name": "Hot air oven", "category": "เครื่องอบรมร้อน", "interval": 12, "lastCalib": "2026-01-16", "certs": [], "note": "", "range": "0-45 °C", "resolution": "0.1 °C", "calibRange": "45 °C", "tolerance": "+-5 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MON-QA-02", "name": "Incubator", "category": "เครื่องบ่ม", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "0-45 °C", "resolution": "0.1 °C", "calibRange": "35 °C", "tolerance": "+-2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MON-QA-03", "name": "Incubator", "category": "เครื่องบ่ม", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "0-35 °C", "resolution": "0.1 °C", "calibRange": "32.5-35 °C", "tolerance": "+-2 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MON-QA-04", "name": "Hot air oven", "category": "เครื่องอบรมร้อน", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "0-180 °C", "resolution": "0.1 °C", "calibRange": "180 °C", "tolerance": "+-5 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MON-RD-01", "name": "Hot air oven", "category": "เครื่องอบรมร้อน", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "0-45 °C", "resolution": "0.1 °C", "calibRange": "45 °C", "tolerance": "+-5 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MAC-QA-01", "name": "Auto Clave", "category": "เครื่องนึงฆ่าเชื้อ", "interval": 12, "lastCalib": "2025-08-01", "certs": [], "note": "", "range": "0-121 °C", "resolution": "1 °C", "calibRange": "115 °C,121°C", "tolerance": "+-3 °C", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MVC-QA-02", "name": "Viscometer", "category": "เครื่องวัดความหนืด", "interval": 12, "lastCalib": "2026-03-02", "certs": [], "note": "", "range": "13,300,000 cps", "resolution": "1 cps", "calibRange": "100-100,000 cps", "tolerance": "+-150", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MVC-QA-03", "name": "Viscometer", "category": "เครื่องวัดความหนืด", "interval": 12, "lastCalib": "2025-11-24", "certs": [], "note": "", "range": "40,000,000 cps", "resolution": "1 cps", "calibRange": "100-100,000 cps", "tolerance": "+-150", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MPP-QA-02", "name": "Micro pipette", "category": "", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "2-200 µl.", "resolution": "0.001 µl.", "calibRange": "2-200 µl.", "tolerance": "+-1.000 µl.", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MPP-QA-05", "name": "Micro pipette", "category": "", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "100-1000 µl.", "resolution": "0.005 µl.", "calibRange": "100-1000 µl.", "tolerance": "+-3.000 µl.", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MPP-QA-06", "name": "Micro pipette", "category": "", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "100-1000 µl.", "resolution": "0.005 µl.", "calibRange": "100-1000 µl.", "tolerance": "+-3.000 µl.", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MPP-QA-07", "name": "Micro pipette", "category": "", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "100-1000 µl.", "resolution": "0.05 µl.", "calibRange": "1000-10000 µl.", "tolerance": "+-500 µl.", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MPP-QA-08", "name": "Micro pipette", "category": "", "interval": 12, "lastCalib": "2025-09-29", "certs": [], "note": "", "range": "1-10 ml.", "resolution": "0.01 ml.", "calibRange": "1-10 ml.", "tolerance": "+-0.5 ml.", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MPP-QA-09", "name": "Micro pipette", "category": "", "interval": 12, "lastCalib": "2025-09-29", "certs": [], "note": "", "range": "100-1000 µl.", "resolution": "0.005 µl.", "calibRange": "200-1000 µl.", "tolerance": "+-5.000 µl.", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MPP-QA-10", "name": "Micro pipette", "category": "", "interval": 12, "lastCalib": "2025-09-29", "certs": [], "note": "", "range": "100-1000 µl.", "resolution": "0.005 µl.", "calibRange": "200-1000 µl.", "tolerance": "+-5.000 µl.", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MSG-QA-01", "name": "Spectro-Guide 45/0 gloss with white Standard (color meter)", "category": "", "interval": 12, "lastCalib": "2025-11-18", "certs": [], "note": "", "range": "", "resolution": "", "calibRange": "", "tolerance": "", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "MSG-QA-02", "name": "ColorFlex L2", "category": "เครื่องวัดค่าดูดกลืนแสง", "interval": 12, "lastCalib": "2026-04-07", "certs": [], "note": "", "range": "", "resolution": "", "calibRange": "", "tolerance": "", "calibResult": "", "docRef": ""}, {"id": "MBS-QA-01", "name": "Biosafety cabinet class II", "category": "ตู้ปลอดเชื้อ", "interval": 12, "lastCalib": "2026-03-26", "certs": [], "note": "", "range": "", "resolution": "", "calibRange": "", "tolerance": "", "calibResult": "", "docRef": ""}, {"id": "MDT-QA-01", "name": "Digital thickness gauge", "category": "เครื่องวัดความหนา", "interval": 12, "lastCalib": "2026-01-20", "certs": [], "note": "", "range": "0-10 mm.", "resolution": "0.01 mm.", "calibRange": "0-10 mm.", "tolerance": "+-0.03  mm.", "calibResult": "ผ่าน", "docRef": "มี"}, {"id": "FM-RD-02", "name": "Pressure Gauge", "category": "เครื่องอัดแป้ง semi", "interval": 12, "lastCalib": "", "certs": [], "note": "", "range": "", "resolution": "", "calibRange": "400-700 psi", "tolerance": "±50 psi", "calibResult": "", "docRef": ""}, {"id": "MX-RD-12", "name": "เครื่องผสมแป้ง 4", "category": "", "interval": 12, "lastCalib": "", "certs": [], "note": "", "range": "1500 rpm", "resolution": "", "calibRange": "800-1000 g", "tolerance": "±10 rpm", "calibResult": "", "docRef": ""}, {"id": "MX-RD-11", "name": "Homogenizer", "category": "เครื่องปั่นผสมของเหลวในแล็บ HOMO LAB 7", "interval": 12, "lastCalib": "", "certs": [], "note": "", "range": "2000-5000 rpm", "resolution": "", "calibRange": "100-1500 g", "tolerance": "±10 rpm", "calibResult": "", "docRef": ""}, {"id": "MX-RD-15", "name": "Homogenizer", "category": "เครื่อง HOMO LAB", "interval": 12, "lastCalib": "", "certs": [], "note": "", "range": "2000-5000 rpm", "resolution": "", "calibRange": "100-1500 g", "tolerance": "±10 rpm", "calibResult": "", "docRef": ""}, {"id": "MX-RD-16", "name": "Homogenizer", "category": "เครื่องปั่นผสมของเหลวในแล็บ HOMO LAB", "interval": 12, "lastCalib": "", "certs": [], "note": "", "range": "2000-5000 rpm", "resolution": "", "calibRange": "100-1500 g", "tolerance": "±10 rpm", "calibResult": "", "docRef": ""}, {"id": "MX-RD-17", "name": "Homogenizer", "category": "เครื่อง HOMO MIXER 50ML-2L", "interval": 12, "lastCalib": "", "certs": [], "note": "", "range": "200-5000 rpm", "resolution": "", "calibRange": "50-2000 g", "tolerance": "±10 rpm", "calibResult": "", "docRef": ""}, {"id": "MX-RD-18", "name": "Homogenizer", "category": "เครื่อง HOMO MIXER 50 ml-2ml", "interval": 12, "lastCalib": "", "certs": [], "note": "", "range": "200-5000 rpm", "resolution": "", "calibRange": "50-2000 g", "tolerance": "±10 rpm", "calibResult": "", "docRef": ""}];
 
@@ -237,16 +463,23 @@ let activePage = 'equipment';
 let editItem = null;
 let searchQ = '';
 let filterStatus = 'all';
+let planView = 'table'; // 'table' or 'calendar'
 
 // ===== HELPERS =====
 function loadItems(){ 
   const d = localStorage.getItem(LS_ITEMS); 
   items = d ? JSON.parse(d) : JSON.parse(JSON.stringify(DEFAULT_ITEMS));
-  items.forEach(it => { if(!it.certs) it.certs=[]; if(!it.category) it.category=''; if(!it.range) it.range=''; if(!it.resolution) it.resolution=''; if(!it.calibRange) it.calibRange=''; if(!it.tolerance) it.tolerance=''; if(!it.calibResult) it.calibResult=''; if(!it.docRef) it.docRef=''; });
+  items.forEach(it => { if(!it.certs) it.certs=[]; if(!it.category) it.category=''; if(!it.range) it.range=''; if(!it.resolution) it.resolution=''; if(!it.calibRange) it.calibRange=''; if(!it.tolerance) it.tolerance=''; if(!it.calibResult) it.calibResult=''; if(!it.docRef) it.docRef=''; if(!it.calibHistory) it.calibHistory=[]; });
 }
-function saveItems(){ localStorage.setItem(LS_ITEMS, JSON.stringify(items)); }
+function saveItems(){ 
+  localStorage.setItem(LS_ITEMS, JSON.stringify(items)); 
+  saveItemsToCloud(); // Sync to Firebase
+}
 function loadSettings(){ const d=localStorage.getItem(LS_SETTINGS); settings=d?JSON.parse(d):{...DEFAULT_SETTINGS}; }
-function saveSettings(){ localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); }
+function saveSettings(){ 
+  localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); 
+  saveSettingsToCloud(); // Sync to Firebase
+}
 
 function getNextCalib(item){
   if(!item.lastCalib) return null;
@@ -453,6 +686,8 @@ function renderEquipment(mc){
               <td style="white-space:nowrap;font-size:11px">${it.calibResult||'-'}</td>
               <td style="white-space:nowrap;font-size:11px">${it.docRef||'-'}</td>
               <td style="white-space:nowrap">
+                <button class="btn-icon" onclick="openCalibModal('${it.id}')" title="บันทึกสอบเทียบ" style="color:#059669">🔬</button>
+                <button class="btn-icon" onclick="openHistoryModal('${it.id}')" title="ดูประวัติ (${(it.calibHistory||[]).length})">📜${(it.calibHistory||[]).length>0?'<sub style=font-size:9px>'+it.calibHistory.length+'</sub>':''}</button>
                 <button class="btn-icon" onclick="openEditModal('${it.id}')" title="แก้ไข">✏️</button>
                 <button class="btn-icon" onclick="deleteItem('${it.id}')" title="ลบ">🗑️</button>
               </td>
@@ -516,47 +751,49 @@ function renderDashboard(mc){
 }
 
 // ===== ANNUAL PLAN =====
+function isDueMonth(it, m, year){
+  if(!it.lastCalib) return false;
+  const base = new Date(it.lastCalib);
+  for(let k=1;k<=24;k++){
+    const check = new Date(base);
+    check.setMonth(check.getMonth() + it.interval*k);
+    if(check.getMonth()===m && check.getFullYear()===year) return true;
+  }
+  return false;
+}
+
 function renderAnnualPlan(mc){
   const now = new Date();
   const year = now.getFullYear();
 
-  mc.innerHTML = `
+  const toolbar = `
     <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-primary btn-sm" onclick="exportAnnualPlan()">📥 Export แผนประจำปี</button>
       <span style="font-size:13px;color:#6b7280">ปี พ.ศ. ${year+543}</span>
-    </div>
+      <div style="flex:1"></div>
+      <div style="display:flex;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+        <button class="btn btn-sm ${planView==='table'?'btn-primary':'btn-secondary'}" style="border-radius:0;border:none" onclick="planView='table';renderPage()">📋 ตาราง</button>
+        <button class="btn btn-sm ${planView==='calendar'?'btn-primary':'btn-secondary'}" style="border-radius:0;border:none" onclick="planView='calendar';renderPage()">📅 ปฏิทิน</button>
+      </div>
+    </div>`;
+
+  if(planView==='table'){
+    mc.innerHTML = toolbar + `
     <div class="tbl-wrap">
       <table class="plan-table">
         <thead><tr>
-          <th style="min-width:60px">ลำดับ</th><th style="min-width:100px">รหัส</th><th style="min-width:160px">ชื่อ</th><th style="min-width:80px">หมวด</th>
+          <th style="min-width:50px">ลำดับ</th><th style="min-width:100px">รหัส</th><th style="min-width:160px">ชื่อ</th><th style="min-width:80px">หมวด</th>
           ${MONTHS_TH.map(m=>`<th style="text-align:center;min-width:44px">${m}</th>`).join('')}
         </tr></thead>
         <tbody>
           ${items.map((it,idx)=>{
-            const nextD = getNextCalib(it);
             return `<tr>
               <td style="text-align:center">${idx+1}</td>
               <td style="font-weight:600">${it.id}</td>
               <td>${it.name}</td>
               <td>${it.category||'-'}</td>
               ${Array.from({length:12},(_,m)=>{
-                // Check if calibration is due in this month
-                if(!nextD) return '<td></td>';
-                const nMonth = nextD.getMonth();
-                const nYear = nextD.getFullYear();
-                // Show dot for the due month and for interval repeats
-                let isDue = false;
-                if(it.lastCalib){
-                  const base = new Date(it.lastCalib);
-                  for(let k=1;k<=24;k++){
-                    const check = new Date(base);
-                    check.setMonth(check.getMonth() + it.interval*k);
-                    if(check.getMonth()===m && check.getFullYear()===year){
-                      isDue = true; break;
-                    }
-                  }
-                }
-                if(!isDue) return '<td></td>';
+                if(!isDueMonth(it,m,year)) return '<td></td>';
                 const checkDate = new Date(year, m+1, 0);
                 const dLeft = Math.ceil((checkDate - now)/86400000);
                 let cls = 'due';
@@ -568,8 +805,36 @@ function renderAnnualPlan(mc){
           }).join('')}
         </tbody>
       </table>
-    </div>
-  `;
+    </div>`;
+  } else {
+    // Calendar view - month cards
+    mc.innerHTML = toolbar + `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+      ${MONTHS_TH.map((mName,mi)=>{
+        const dueItems = items.filter(it=>isDueMonth(it,mi,year));
+        const monthEnd = new Date(year, mi+1, 0);
+        const isPast = monthEnd < now;
+        const isCurrent = now.getMonth()===mi && now.getFullYear()===year;
+        const borderColor = isCurrent?'#059669':isPast?'#e5e7eb':'#e5e7eb';
+        return `<div class="card" style="border-color:${borderColor};${isCurrent?'box-shadow:0 0 0 2px #d1fae5':''}">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-weight:700;font-size:15px;${isCurrent?'color:#059669':''}">${MONTHS_FULL[mi]}</span>
+            <span style="font-size:12px;padding:2px 8px;border-radius:99px;${dueItems.length>0?'background:#fef3c7;color:#92400e':'background:#d1fae5;color:#065f46'}">${dueItems.length} รายการ</span>
+          </div>
+          ${dueItems.length>0? dueItems.map(it=>{
+            const st = getStatus(it);
+            const dot = st==='overdue'?'🔴':st==='soon'?'🟡':'🟢';
+            return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px">
+              <span>${dot}</span>
+              <span style="font-weight:600;min-width:80px">${it.id}</span>
+              <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.name}</span>
+              <span style="color:#6b7280;font-size:11px">${it.category||''}</span>
+            </div>`;
+          }).join(''):'<div style="text-align:center;padding:12px;font-size:12px;color:#9ca3af">ไม่มีรายการ</div>'}
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
 }
 
 // ===== ALERTS =====
@@ -630,6 +895,14 @@ function renderPrint(mc){
       </div>
       <button class="btn btn-primary btn-sm" onclick="exportPlanRange()">📥 Export แผน</button>
     </div>
+    <div class="export-section">
+      <h4>📜 Export ประวัติการสอบเทียบ (Audit Trail)</h4>
+      <p style="font-size:12px;color:#6b7280;margin-bottom:8px">ส่งออกประวัติการสอบเทียบย้อนหลังทุกครั้ง ของทุกอุปกรณ์ สำหรับเตรียม Audit</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="exportAllHistory()">📜 ประวัติสอบเทียบทั้งหมด</button>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:#9ca3af">รวมประวัติ: ${items.reduce((s,it)=>s+(it.calibHistory||[]).length,0)} ครั้ง จาก ${items.filter(it=>(it.calibHistory||[]).length>0).length} อุปกรณ์</div>
+    </div>
   `;
 }
 
@@ -656,6 +929,18 @@ function renderSettings(mc){
       </div>
     </div>
     <div class="setting-section">
+      <h4>☁️ Firebase Cloud Sync</h4>
+      <div style="font-size:13px;color:#6b7280">
+        <p>สถานะ: <b id="settingsFbStatus">${fbReady?'🟢 เชื่อมต่อแล้ว':'🔴 ไม่ได้เชื่อมต่อ'}</b></p>
+        <p>Project: <b>calibtrack-wann</b></p>
+        <p>ข้อมูลจะ sync อัตโนมัติทุกครั้งที่บันทึก</p>
+        <p style="margin-top:8px">
+          <button class="btn btn-primary btn-sm" onclick="forceSync()">🔄 Sync ตอนนี้</button>
+          <button class="btn btn-secondary btn-sm" onclick="uploadAllToCloud()" style="margin-left:4px">☁️ อัพโหลดทั้งหมดขึ้น Cloud</button>
+        </p>
+      </div>
+    </div>
+    <div class="setting-section">
       <h4>💾 ข้อมูลระบบ</h4>
       <div style="font-size:13px;color:#6b7280">
         <p>อุปกรณ์ทั้งหมด: <b>${items.length}</b> รายการ</p>
@@ -678,6 +963,7 @@ function saveSettingsForm(){
   saveSettings();
   if(pin.length===4 && /^\d{4}$/.test(pin)){
     localStorage.setItem(LS_PIN, pin);
+    savePinToCloud();
   }
   toast('บันทึกการตั้งค่าแล้ว ✓');
   renderNav();
@@ -918,7 +1204,7 @@ function makeExportRows(list){
       'สอบเทียบล่าสุด':it.lastCalib||'',
       'ความถี่':intervalLabel(it.interval),
       'ครบกำหนด':next?next.toISOString().split('T')[0]:'',
-      'เหลือ/เกิน (วัน)':days, 'Cert':it.docRef?'มี':'',
+      'เหลือ/เกิน':days, 'Cert':it.docRef?'มี':'',
       'สถานะ':st==='new'?'ครั้งแรก':st==='overdue'?'เกินกำหนด':st==='soon'?'ใกล้ครบ':'ปกติ',
       'พิกัด':it.range||'', 'ความละเอียด':it.resolution||'',
       'ช่วงการใช้งาน/ช่วงสอบเทียบ':it.calibRange||'', 'ค่ายอมรับได้':it.tolerance||'',
@@ -927,41 +1213,31 @@ function makeExportRows(list){
   });
 }
 
-function downloadXLSX(rows, filename){
+function downloadXLSX(rows, filename, sheetName){
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Data');
-  // Auto width
-  const colW = Object.keys(rows[0]||{}).map(k => ({wch: Math.max(k.length*2, ...rows.map(r=>String(r[k]||'').length*1.5))}));
-  ws['!cols'] = colW;
+  XLSX.utils.book_append_sheet(wb, ws, sheetName||'รายการอุปกรณ์');
+  // Column widths matching the form template
+  const FORM_WIDTHS = {'ลำดับ':6,'รหัส':16,'ชื่อ':50,'หมวด':34,'สอบเทียบล่าสุด':14,'ความถี่':7,'ครบกำหนด':11,'เหลือ/เกิน':9,'เหลือ/เกิน (วัน)':9,'Cert':5,'สถานะ':7,'พิกัด':21,'ความละเอียด':21,'ช่วงการใช้งาน/ช่วงสอบเทียบ':25,'ค่ายอมรับได้':16,'ผลการสอบเทียบ':15,'เอกสารอ้างอิง':15,'หมายเหตุ':9};
+  const keys = Object.keys(rows[0]||{});
+  ws['!cols'] = keys.map(k => ({wch: FORM_WIDTHS[k] || Math.max(k.length*2, 8)}));
   XLSX.writeFile(wb, filename);
 }
 
-function exportAll(){ downloadXLSX(makeExportRows(items), `CalibTrack_All_${new Date().toISOString().split('T')[0]}.xlsx`); toast('Export สำเร็จ ✓'); }
-function exportOverdue(){ const list=items.filter(i=>getStatus(i)==='overdue'); if(!list.length){toast('ไม่มีรายการ');return;} downloadXLSX(makeExportRows(list),'CalibTrack_Overdue.xlsx'); toast('Export สำเร็จ ✓'); }
-function exportSoon(){ const list=items.filter(i=>getStatus(i)==='soon'); if(!list.length){toast('ไม่มีรายการ');return;} downloadXLSX(makeExportRows(list),'CalibTrack_DueSoon.xlsx'); toast('Export สำเร็จ ✓'); }
+function exportAll(){ downloadXLSX(makeExportRows(items), `CalibTrack_Report_${new Date().toISOString().split('T')[0]}.xlsx`, 'รายการอุปกรณ์'); toast('Export สำเร็จ ✓'); }
+function exportOverdue(){ const list=items.filter(i=>getStatus(i)==='overdue'); if(!list.length){toast('ไม่มีรายการ');return;} downloadXLSX(makeExportRows(list),'CalibTrack_Overdue.xlsx','เกินกำหนด'); toast('Export สำเร็จ ✓'); }
+function exportSoon(){ const list=items.filter(i=>getStatus(i)==='soon'); if(!list.length){toast('ไม่มีรายการ');return;} downloadXLSX(makeExportRows(list),'CalibTrack_DueSoon.xlsx','ใกล้ครบกำหนด'); toast('Export สำเร็จ ✓'); }
 
 function exportAnnualPlan(){
   const year = new Date().getFullYear();
   const rows = items.map((it,idx)=>{
     const row = {'ลำดับ':idx+1,'รหัส':it.id,'ชื่อ':it.name,'หมวด':it.category||''};
-    MONTHS_TH.forEach((m,mi)=>{
-      let isDue = false;
-      if(it.lastCalib){
-        const base = new Date(it.lastCalib);
-        for(let k=1;k<=24;k++){
-          const check = new Date(base);
-          check.setMonth(check.getMonth() + it.interval*k);
-          if(check.getMonth()===mi && check.getFullYear()===year){ isDue=true; break; }
-        }
-      }
-      row[m] = isDue ? '●' : '';
-    });
+    MONTHS_TH.forEach((m,mi)=>{ row[m] = isDueMonth(it,mi,year) ? '●' : ''; });
     row['สอบเทียบล่าสุด'] = it.lastCalib||'';
     row['ความถี่'] = intervalLabel(it.interval);
     return row;
   });
-  downloadXLSX(rows, `CalibPlan_${year+543}.xlsx`);
+  downloadXLSX(rows, `CalibPlan_${year+543}.xlsx`, 'แผนสอบเทียบประจำปี');
   toast('Export แผนสำเร็จ ✓');
 }
 
@@ -974,31 +1250,335 @@ function exportPlanRange(){
   
   const rows = items.map((it,idx)=>{
     const row = {'ลำดับ':idx+1,'รหัส':it.id,'ชื่อ':it.name,'หมวด':it.category||''};
-    months.forEach(mi=>{
-      let isDue = false;
-      if(it.lastCalib){
-        const base = new Date(it.lastCalib);
-        for(let k=1;k<=24;k++){
-          const check = new Date(base);
-          check.setMonth(check.getMonth() + it.interval*k);
-          if(check.getMonth()===mi && check.getFullYear()===year){ isDue=true; break; }
-        }
-      }
-      row[MONTHS_TH[mi]] = isDue ? '●' : '';
-    });
+    months.forEach(mi=>{ row[MONTHS_TH[mi]] = isDueMonth(it,mi,year) ? '●' : ''; });
     return row;
   });
-  downloadXLSX(rows, `CalibPlan_${MONTHS_TH[from]}-${MONTHS_TH[to]}_${year+543}.xlsx`);
+  downloadXLSX(rows, `CalibPlan_${MONTHS_TH[from]}-${MONTHS_TH[to]}_${year+543}.xlsx`, 'แผนสอบเทียบ');
   toast('Export แผนสำเร็จ ✓');
 }
 
+// ===== CALIBRATION HISTORY =====
+
+function openCalibModal(id){
+  const it = items.find(i=>i.id===id);
+  if(!it) return;
+  const today = new Date().toISOString().split('T')[0];
+  
+  const overlay = document.createElement('div');
+  overlay.className='modal-overlay';
+  overlay.id='itemModal';
+  overlay.innerHTML=`
+    <div class="modal">
+      <h3>🔬 บันทึกการสอบเทียบใหม่</h3>
+      <div style="background:#f0fdf4;border:1px solid #a7f3d0;border-radius:10px;padding:12px;margin-bottom:16px;font-size:13px">
+        <b>${it.id}</b> — ${it.name}<br>
+        <span style="color:#6b7280">${it.category||'-'} · สอบเทียบล่าสุด: ${fmtDate(it.lastCalib)||'ยังไม่เคย'}</span>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>วันที่สอบเทียบ *</label><input type="date" id="hDate" value="${today}"/></div>
+        <div class="form-group"><label>ผลการสอบเทียบ *</label><select id="hResult">
+          <option value="ผ่าน" selected>✅ ผ่าน</option>
+          <option value="ไม่ผ่าน">❌ ไม่ผ่าน</option>
+          <option value="ผ่านแบบมีเงื่อนไข">⚠️ ผ่านแบบมีเงื่อนไข</option>
+        </select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>พิกัด</label><input id="hRange" value="${it.range||''}"/></div>
+        <div class="form-group"><label>ความละเอียด</label><input id="hResolution" value="${it.resolution||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>ช่วงการใช้งาน/สอบเทียบ</label><input id="hCalibRange" value="${it.calibRange||''}"/></div>
+        <div class="form-group"><label>ค่ายอมรับได้</label><input id="hTolerance" value="${it.tolerance||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>เอกสารอ้างอิง / เลข Cert</label><input id="hDocRef" value="" placeholder="เช่น Cert No. XXXX"/></div>
+        <div class="form-group"><label>ผู้สอบเทียบ / บริษัท</label><input id="hOperator" value="" placeholder="ชื่อผู้สอบเทียบ"/></div>
+      </div>
+      <div class="form-group"><label>หมายเหตุ</label><textarea id="hNote" rows="2" placeholder="บันทึกเพิ่มเติม..."></textarea></div>
+      <div class="form-group">
+        <label>แนบใบ Cert</label>
+        <div class="cert-zone" onclick="document.getElementById('hCertInput').click()">
+          📁 คลิกเพื่อเลือกไฟล์ (JPG, PNG, PDF · สูงสุด 5MB)
+          <input type="file" id="hCertInput" accept="image/*,.pdf" multiple style="display:none" onchange="handleHistCert(event)"/>
+        </div>
+        <div id="hCertPreview" class="cert-preview"></div>
+      </div>
+      <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px;margin-top:12px;font-size:12px;color:#92400e">
+        ⚠️ ข้อมูลสอบเทียบปัจจุบัน${it.lastCalib?' ('+fmtDate(it.lastCalib)+')':''} จะถูกย้ายเข้า <b>ประวัติย้อนหลัง</b> อัตโนมัติ ไม่ถูกลบทิ้ง
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="closeModal()">ยกเลิก</button>
+        <button class="btn btn-primary" onclick="saveCalibration('${it.id}')">💾 บันทึกการสอบเทียบ</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  window._histCerts = [];
+}
+
+function handleHistCert(e){
+  Array.from(e.target.files).forEach(f=>{
+    if(f.size>5*1024*1024){toast('ไฟล์เกิน 5MB');return;}
+    const reader = new FileReader();
+    reader.onload = ev => {
+      window._histCerts.push(ev.target.result);
+      const p = document.getElementById('hCertPreview');
+      if(p) p.innerHTML += `<img src="${ev.target.result}" class="cert-thumb"/>`;
+    };
+    reader.readAsDataURL(f);
+  });
+}
+
+function saveCalibration(id){
+  const it = items.find(i=>i.id===id);
+  if(!it) return;
+  const newDate = document.getElementById('hDate').value;
+  const newResult = document.getElementById('hResult').value;
+  if(!newDate){toast('กรุณาเลือกวันที่');return;}
+  
+  // Push current data to history (if has existing calibration)
+  if(it.lastCalib){
+    const histEntry = {
+      date: it.lastCalib,
+      result: it.calibResult||'',
+      range: it.range||'',
+      resolution: it.resolution||'',
+      calibRange: it.calibRange||'',
+      tolerance: it.tolerance||'',
+      docRef: it.docRef||'',
+      certs: it.certs||[],
+      note: it.note||'',
+      operator: '',
+      recordedAt: new Date().toISOString()
+    };
+    if(!it.calibHistory) it.calibHistory=[];
+    it.calibHistory.unshift(histEntry);
+  }
+  
+  // Update current data with new calibration
+  it.lastCalib = newDate;
+  it.calibResult = newResult;
+  it.range = document.getElementById('hRange').value.trim();
+  it.resolution = document.getElementById('hResolution').value.trim();
+  it.calibRange = document.getElementById('hCalibRange').value.trim();
+  it.tolerance = document.getElementById('hTolerance').value.trim();
+  it.docRef = document.getElementById('hDocRef').value.trim();
+  it.note = document.getElementById('hNote').value.trim();
+  it.certs = (window._histCerts||[]).slice();
+  
+  // Store operator in the CURRENT record so next time it moves to history
+  it._lastOperator = document.getElementById('hOperator').value.trim();
+  
+  saveItems();
+  closeModal();
+  renderPage(); renderNav();
+  toast(`บันทึกการสอบเทียบ ${id} สำเร็จ ✓`);
+}
+
+function openHistoryModal(id){
+  const it = items.find(i=>i.id===id);
+  if(!it) return;
+  const hist = it.calibHistory||[];
+  
+  const overlay = document.createElement('div');
+  overlay.className='modal-overlay';
+  overlay.id='itemModal';
+  overlay.innerHTML=`
+    <div class="modal" style="max-width:700px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3 style="margin:0">📜 ประวัติการสอบเทียบ</h3>
+        ${hist.length>0?`<button class="btn btn-sm btn-secondary" onclick="exportItemHistory('${it.id}')">📥 Export</button>`:''}
+      </div>
+      <div style="background:#f0fdf4;border:1px solid #a7f3d0;border-radius:10px;padding:12px;margin-bottom:16px;font-size:13px">
+        <b>${it.id}</b> — ${it.name}<br>
+        <span style="color:#6b7280">${it.category||'-'}</span>
+      </div>
+      
+      <!-- Current calibration -->
+      <div style="font-size:12px;font-weight:600;color:#059669;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">📌 ปัจจุบัน</div>
+      <div style="border:2px solid #a7f3d0;border-radius:10px;padding:12px;margin-bottom:16px;font-size:13px;background:#f0fdf4">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <div><span style="color:#6b7280">วันที่:</span> <b>${fmtDate(it.lastCalib)||'ยังไม่เคย'}</b></div>
+          <div><span style="color:#6b7280">ผล:</span> <b>${it.calibResult||'-'}</b></div>
+          <div><span style="color:#6b7280">พิกัด:</span> ${it.range||'-'}</div>
+          <div><span style="color:#6b7280">ความละเอียด:</span> ${it.resolution||'-'}</div>
+          <div><span style="color:#6b7280">ช่วงใช้งาน:</span> ${it.calibRange||'-'}</div>
+          <div><span style="color:#6b7280">ค่ายอมรับได้:</span> ${it.tolerance||'-'}</div>
+          <div><span style="color:#6b7280">เอกสาร:</span> ${it.docRef||'-'}</div>
+          <div><span style="color:#6b7280">หมายเหตุ:</span> ${it.note||'-'}</div>
+        </div>
+      </div>
+      
+      <!-- History -->
+      <div style="font-size:12px;font-weight:600;color:#6b7280;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">📋 ประวัติย้อนหลัง (${hist.length} ครั้ง)</div>
+      ${hist.length===0?'<div style="text-align:center;padding:24px;color:#9ca3af;font-size:13px">ยังไม่มีประวัติ — จะเริ่มบันทึกเมื่อมีการสอบเทียบครั้งใหม่</div>':
+      `<div style="max-height:400px;overflow-y:auto">
+        ${hist.map((h,i)=>{
+          const resultColor = h.result==='ผ่าน'?'#059669':h.result==='ไม่ผ่าน'?'#dc2626':'#d97706';
+          return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin-bottom:8px;font-size:12px;${i===0?'border-left:3px solid #6b7280':''}">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+              <span style="font-weight:700;font-size:13px">ครั้งที่ ${hist.length-i}</span>
+              <span style="font-weight:600;color:${resultColor}">${h.result||'-'}</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;color:#4b5563">
+              <div><span style="color:#9ca3af">วันที่:</span> ${fmtDate(h.date)}</div>
+              <div><span style="color:#9ca3af">เอกสาร:</span> ${h.docRef||'-'}</div>
+              <div><span style="color:#9ca3af">พิกัด:</span> ${h.range||'-'}</div>
+              <div><span style="color:#9ca3af">ความละเอียด:</span> ${h.resolution||'-'}</div>
+              <div><span style="color:#9ca3af">ช่วงใช้งาน:</span> ${h.calibRange||'-'}</div>
+              <div><span style="color:#9ca3af">ค่ายอมรับได้:</span> ${h.tolerance||'-'}</div>
+              ${h.operator?`<div><span style="color:#9ca3af">ผู้สอบเทียบ:</span> ${h.operator}</div>`:''}
+              ${h.note?`<div><span style="color:#9ca3af">หมายเหตุ:</span> ${h.note}</div>`:''}
+            </div>
+            ${h.certs&&h.certs.length>0?`<div class="cert-preview" style="margin-top:6px">${h.certs.map(c=>`<img src="${c}" class="cert-thumb" onclick="window.open('${c}','_blank')" style="cursor:pointer" title="คลิกเพื่อดูขนาดเต็ม"/>`).join('')}</div>`:''}
+          </div>`;
+        }).join('')}
+      </div>`}
+      
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="closeModal()">ปิด</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function exportItemHistory(id){
+  const it = items.find(i=>i.id===id);
+  if(!it) return;
+  const hist = it.calibHistory||[];
+  
+  // Current + history combined
+  const rows = [];
+  // Current as row 1
+  rows.push({
+    'ครั้งที่': hist.length+1+'(ปัจจุบัน)',
+    'รหัส': it.id,
+    'ชื่อ': it.name,
+    'หมวด': it.category||'',
+    'วันที่สอบเทียบ': it.lastCalib||'',
+    'ผลการสอบเทียบ': it.calibResult||'',
+    'พิกัด': it.range||'',
+    'ความละเอียด': it.resolution||'',
+    'ช่วงการใช้งาน/ช่วงสอบเทียบ': it.calibRange||'',
+    'ค่ายอมรับได้': it.tolerance||'',
+    'เอกสารอ้างอิง': it.docRef||'',
+    'ผู้สอบเทียบ': it._lastOperator||'',
+    'หมายเหตุ': it.note||''
+  });
+  // History rows
+  hist.forEach((h,i)=>{
+    rows.push({
+      'ครั้งที่': hist.length-i,
+      'รหัส': it.id,
+      'ชื่อ': it.name,
+      'หมวด': it.category||'',
+      'วันที่สอบเทียบ': h.date||'',
+      'ผลการสอบเทียบ': h.result||'',
+      'พิกัด': h.range||'',
+      'ความละเอียด': h.resolution||'',
+      'ช่วงการใช้งาน/ช่วงสอบเทียบ': h.calibRange||'',
+      'ค่ายอมรับได้': h.tolerance||'',
+      'เอกสารอ้างอิง': h.docRef||'',
+      'ผู้สอบเทียบ': h.operator||'',
+      'หมายเหตุ': h.note||''
+    });
+  });
+  downloadXLSX(rows, `CalibHistory_${it.id}_${new Date().toISOString().split('T')[0]}.xlsx`, 'ประวัติสอบเทียบ');
+  toast('Export ประวัติสำเร็จ ✓');
+}
+
+// Export ALL items history combined
+function exportAllHistory(){
+  const rows = [];
+  items.forEach(it=>{
+    const hist = it.calibHistory||[];
+    // Current
+    rows.push({
+      'รหัส': it.id, 'ชื่อ': it.name, 'หมวด': it.category||'',
+      'ครั้งที่': hist.length+1, 'สถานะ': 'ปัจจุบัน',
+      'วันที่สอบเทียบ': it.lastCalib||'',
+      'ผลการสอบเทียบ': it.calibResult||'',
+      'พิกัด': it.range||'', 'ความละเอียด': it.resolution||'',
+      'ช่วงการใช้งาน/ช่วงสอบเทียบ': it.calibRange||'',
+      'ค่ายอมรับได้': it.tolerance||'',
+      'เอกสารอ้างอิง': it.docRef||'', 'หมายเหตุ': it.note||''
+    });
+    hist.forEach((h,i)=>{
+      rows.push({
+        'รหัส': it.id, 'ชื่อ': it.name, 'หมวด': it.category||'',
+        'ครั้งที่': hist.length-i, 'สถานะ': 'ย้อนหลัง',
+        'วันที่สอบเทียบ': h.date||'',
+        'ผลการสอบเทียบ': h.result||'',
+        'พิกัด': h.range||'', 'ความละเอียด': h.resolution||'',
+        'ช่วงการใช้งาน/ช่วงสอบเทียบ': h.calibRange||'',
+        'ค่ายอมรับได้': h.tolerance||'',
+        'เอกสารอ้างอิง': h.docRef||'', 'หมายเหตุ': h.note||''
+      });
+    });
+  });
+  if(!rows.length){toast('ไม่มีข้อมูล');return;}
+  downloadXLSX(rows, `CalibHistory_All_${new Date().toISOString().split('T')[0]}.xlsx`, 'ประวัติทั้งหมด');
+  toast('Export ประวัติทั้งหมดสำเร็จ ✓');
+}
+
+// ===== CLOUD SYNC HELPERS =====
+async function forceSync(){
+  if(!fbReady){toast('Firebase ไม่ได้เชื่อมต่อ');return;}
+  setSyncStatus('syncing','กำลัง sync...');
+  const loaded = await loadItemsFromCloud();
+  await loadSettingsFromCloud();
+  await loadPinFromCloud();
+  if(loaded){
+    renderPage(); renderNav();
+    toast('Sync จาก Cloud สำเร็จ ✓');
+  } else {
+    toast('ไม่มีข้อมูลบน Cloud');
+  }
+}
+
+async function uploadAllToCloud(){
+  if(!fbReady){toast('Firebase ไม่ได้เชื่อมต่อ');return;}
+  if(!confirm('อัพโหลดข้อมูลทั้งหมดจากเครื่องนี้ขึ้น Cloud? (จะทับข้อมูลบน Cloud)')) return;
+  setSyncStatus('syncing','กำลังอัพโหลด...');
+  await saveItemsToCloud();
+  await saveSettingsToCloud();
+  await savePinToCloud();
+  toast(`อัพโหลด ${items.length} รายการขึ้น Cloud สำเร็จ ✓`);
+}
+
 // ===== INIT =====
-function init(){
+async function init(){
+  // 1. Load from localStorage first (fast)
   loadItems();
   loadSettings();
   initPIN();
   renderNav();
   renderPage();
+  
+  // 2. Initialize Firebase
+  initFirebase();
+  
+  // 3. Load from cloud (overrides local if available)
+  if(fbReady){
+    await loadPinFromCloud();
+    const cloudLoaded = await loadItemsFromCloud();
+    await loadSettingsFromCloud();
+    
+    if(!cloudLoaded && items.length > 0){
+      // First time: push local data to cloud
+      setSyncStatus('syncing','อัพโหลดข้อมูลเริ่มต้น...');
+      await saveItemsToCloud();
+      await saveSettingsToCloud();
+      await savePinToCloud();
+    }
+    
+    // 4. Start real-time listener
+    startRealtimeSync();
+    
+    renderNav();
+    renderPage();
+  }
 }
 init();
 </script>
