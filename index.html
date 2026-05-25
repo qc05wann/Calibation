@@ -101,8 +101,8 @@ tr:hover td{background:#f0fdf4}
 .pin-box{text-align:center}
 .pin-box h1{font-size:28px;font-weight:700;margin-bottom:4px}
 .pin-box p{color:rgba(255,255,255,.6);margin-bottom:24px;font-size:14px}
-.pin-dots{display:flex;gap:12px;justify-content:center;margin-bottom:24px}
-.pin-dot{width:14px;height:14px;border-radius:99px;border:2px solid rgba(255,255,255,.4);transition:all .2s}
+.pin-dots{display:flex;gap:8px;justify-content:center;margin-bottom:24px}
+.pin-dot{width:12px;height:12px;border-radius:99px;border:2px solid rgba(255,255,255,.4);transition:all .2s}
 .pin-dot.filled{background:#34d399;border-color:#34d399}
 .pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:240px;margin:0 auto}
 .pin-key{width:64px;height:64px;border-radius:50%;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;font-size:22px;font-weight:600;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;font-family:inherit}
@@ -234,11 +234,12 @@ tr:hover td{background:#f0fdf4}
   <div class="pin-box">
     <div style="font-size:48px;margin-bottom:8px">⚙️</div>
     <h1>CalibTrack</h1>
-    <p>กรอก PIN เพื่อเข้าใช้งาน</p>
+    <p>กรอก PIN 8 หลัก เพื่อเข้าใช้งาน</p>
+    <p style="font-size:11px;color:rgba(255,255,255,.35);margin-top:-16px;margin-bottom:20px">กดจากปุ่มด้านล่างหรือพิมพ์จากคีย์บอร์ดได้</p>
     <div class="pin-dots" id="pinDots"></div>
     <div class="pin-pad" id="pinPad"></div>
     <div class="pin-msg" id="pinMsg"></div>
-    <div style="margin-top:24px"><a href="#" onclick="resetPIN(event)" style="color:rgba(255,255,255,.4);font-size:12px;text-decoration:underline">ลืม PIN? รีเซ็ตเป็น 1234</a></div>
+    <div style="margin-top:24px"><a href="#" onclick="resetPIN(event)" style="color:rgba(255,255,255,.4);font-size:12px;text-decoration:underline">ลืม PIN? รีเซ็ตเป็น 12345678</a></div>
   </div>
 </div>
 
@@ -442,7 +443,7 @@ async function loadSettingsFromCloud(){
 }
 async function savePinToCloud(){
   if(!fbReady || !db) return;
-  try { await db.collection('config').doc('pin').set({pin: localStorage.getItem(LS_PIN)||'1234'}); } catch(e){ console.error(e); }
+  try { await db.collection('config').doc('pin').set({pin: localStorage.getItem(LS_PIN)||PIN_DEFAULT}); } catch(e){ console.error(e); }
 }
 async function loadPinFromCloud(){
   if(!fbReady || !db) return;
@@ -525,20 +526,32 @@ function intervalLabel(m){
 }
 
 // ===== PIN SYSTEM =====
+const PIN_LENGTH = 8;
+const PIN_DEFAULT = '12345678';
 let pinInput = '';
 let pinAttempts = 0;
 let pinLocked = false;
 
 function initPIN(){
-  if(!localStorage.getItem(LS_PIN)) localStorage.setItem(LS_PIN,'1234');
+  if(!localStorage.getItem(LS_PIN)) localStorage.setItem(LS_PIN, PIN_DEFAULT);
   const sess = sessionStorage.getItem(LS_SESSION);
   if(sess==='ok'){ document.getElementById('pinScreen').style.display='none'; return; }
   renderPIN();
+  // Keyboard support
+  document.addEventListener('keydown', handlePinKeyboard);
+}
+
+function handlePinKeyboard(e){
+  const pinScreen = document.getElementById('pinScreen');
+  if(!pinScreen || pinScreen.style.display==='none') return;
+  if(e.key>='0' && e.key<='9'){ handlePinKey(parseInt(e.key)); }
+  else if(e.key==='Backspace'){ handlePinKey('⌫'); }
+  else if(e.key==='Enter' && pinInput.length===PIN_LENGTH){ checkPIN(); }
 }
 
 function renderPIN(){
   const dots = document.getElementById('pinDots');
-  dots.innerHTML = Array.from({length:4},(_,i)=>`<div class="pin-dot ${i<pinInput.length?'filled':''}"></div>`).join('');
+  dots.innerHTML = Array.from({length:PIN_LENGTH},(_,i)=>`<div class="pin-dot ${i<pinInput.length?'filled':''}"></div>`).join('');
   
   const pad = document.getElementById('pinPad');
   pad.innerHTML = '';
@@ -556,30 +569,33 @@ function handlePinKey(k){
   if(pinLocked) return;
   if(k==='⌫'){ pinInput=pinInput.slice(0,-1); renderPIN(); return; }
   if(k==='') return;
+  if(pinInput.length>=PIN_LENGTH) return;
   pinInput += String(k);
   renderPIN();
-  if(pinInput.length===4){
-    const stored = localStorage.getItem(LS_PIN)||'1234';
-    if(pinInput===stored){
-      sessionStorage.setItem(LS_SESSION,'ok');
-      document.getElementById('pinScreen').style.display='none';
-      pinInput=''; pinAttempts=0;
+  if(pinInput.length===PIN_LENGTH){ checkPIN(); }
+}
+
+function checkPIN(){
+  const stored = localStorage.getItem(LS_PIN)||PIN_DEFAULT;
+  if(pinInput===stored){
+    sessionStorage.setItem(LS_SESSION,'ok');
+    document.getElementById('pinScreen').style.display='none';
+    pinInput=''; pinAttempts=0;
+  } else {
+    pinAttempts++;
+    const msg = document.getElementById('pinMsg');
+    if(pinAttempts>=5){
+      pinLocked=true;
+      msg.textContent='ลองเกิน 5 ครั้ง — ลองใหม่ใน 30 วินาที';
+      msg.className='pin-msg error';
+      setTimeout(()=>{ pinLocked=false; pinAttempts=0; msg.textContent=''; renderPIN(); },30000);
     } else {
-      pinAttempts++;
-      const msg = document.getElementById('pinMsg');
-      if(pinAttempts>=5){
-        pinLocked=true;
-        msg.textContent='ลองเกิน 5 ครั้ง — ลองใหม่ใน 30 วินาที';
-        msg.className='pin-msg error';
-        setTimeout(()=>{ pinLocked=false; pinAttempts=0; msg.textContent=''; renderPIN(); },30000);
-      } else {
-        msg.textContent=`PIN ไม่ถูกต้อง (${pinAttempts}/5)`;
-        msg.className='pin-msg error';
-        setTimeout(()=>{ msg.textContent=''; },2000);
-      }
-      pinInput='';
-      renderPIN();
+      msg.textContent=`PIN ไม่ถูกต้อง (${pinAttempts}/5)`;
+      msg.className='pin-msg error';
+      setTimeout(()=>{ msg.textContent=''; },2000);
     }
+    pinInput='';
+    renderPIN();
   }
 }
 
@@ -587,11 +603,11 @@ function doLogout(){ sessionStorage.removeItem(LS_SESSION); pinInput=''; documen
 
 function resetPIN(e){
   e.preventDefault();
-  if(confirm('รีเซ็ต PIN เป็น 1234 ?')){
-    localStorage.setItem(LS_PIN,'1234');
+  if(confirm('รีเซ็ต PIN เป็น '+PIN_DEFAULT+' ?')){
+    localStorage.setItem(LS_PIN, PIN_DEFAULT);
     pinInput=''; pinAttempts=0; pinLocked=false;
     savePinToCloud();
-    document.getElementById('pinMsg').textContent='รีเซ็ตแล้ว — PIN ใหม่คือ 1234';
+    document.getElementById('pinMsg').textContent='รีเซ็ตแล้ว — PIN ใหม่คือ '+PIN_DEFAULT;
     document.getElementById('pinMsg').className='pin-msg';
     document.getElementById('pinMsg').style.color='#6ee7b7';
     renderPIN();
@@ -795,7 +811,10 @@ function renderAnnualPlan(mc){
       <table class="plan-table">
         <thead><tr>
           <th style="min-width:50px">ลำดับ</th><th style="min-width:100px">รหัส</th><th style="min-width:160px">ชื่อ</th><th style="min-width:80px">หมวด</th>
+          <th style="min-width:90px">พิกัด</th><th style="min-width:80px">ความละเอียด</th><th style="min-width:100px">ช่วงสอบเทียบ</th><th style="min-width:90px">ค่ายอมรับได้</th>
+          <th style="min-width:70px">ความถี่</th><th style="min-width:90px">สอบเทียบล่าสุด</th>
           ${MONTHS_TH.map(m=>`<th style="text-align:center;min-width:44px">${m}</th>`).join('')}
+          <th style="min-width:60px">ผลสอบเทียบ</th><th style="min-width:50px">Cert</th>
         </tr></thead>
         <tbody>
           ${items.map((it,idx)=>{
@@ -804,6 +823,12 @@ function renderAnnualPlan(mc){
               <td style="font-weight:600">${it.id}</td>
               <td>${it.name}</td>
               <td>${it.category||'-'}</td>
+              <td style="font-size:11px">${it.range||'-'}</td>
+              <td style="font-size:11px">${it.resolution||'-'}</td>
+              <td style="font-size:11px">${it.calibRange||'-'}</td>
+              <td style="font-size:11px">${it.tolerance||'-'}</td>
+              <td style="text-align:center">${intervalLabel(it.interval)}</td>
+              <td style="text-align:center">${it.lastCalib?fmtDate(it.lastCalib):'-'}</td>
               ${Array.from({length:12},(_,m)=>{
                 if(!isDueMonth(it,m,year)) return '<td></td>';
                 const checkDate = new Date(year, m+1, 0);
@@ -813,6 +838,8 @@ function renderAnnualPlan(mc){
                 else if(dLeft <= settings.alertDays) cls='warn';
                 return `<td><div class="plan-dot ${cls}">●</div></td>`;
               }).join('')}
+              <td style="text-align:center;font-size:11px">${it.calibResult||'-'}</td>
+              <td style="text-align:center">${it.docRef||'-'}</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -920,7 +947,7 @@ function renderPrint(mc){
 
 // ===== SETTINGS =====
 function renderSettings(mc){
-  const pin = localStorage.getItem(LS_PIN)||'1234';
+  const pin = localStorage.getItem(LS_PIN)||PIN_DEFAULT;
   mc.innerHTML = `
     <div class="setting-section">
       <h4>🔔 การแจ้งเตือน</h4>
@@ -936,8 +963,8 @@ function renderSettings(mc){
     <div class="setting-section">
       <h4>🔒 ความปลอดภัย</h4>
       <div class="form-group">
-        <label>PIN (4 หลัก)</label>
-        <input type="password" id="setPin" value="${pin}" maxlength="4" pattern="[0-9]{4}"/>
+        <label>PIN (8 หลัก)</label>
+        <input type="password" id="setPin" value="${pin}" maxlength="8" pattern="[0-9]{8}" inputmode="numeric"/>
       </div>
     </div>
     <div class="setting-section">
@@ -973,7 +1000,7 @@ function saveSettingsForm(){
   settings.alertDays = days;
   settings.email = email;
   saveSettings();
-  if(pin.length===4 && /^\d{4}$/.test(pin)){
+  if(pin.length===PIN_LENGTH && /^\d{8}$/.test(pin)){
     localStorage.setItem(LS_PIN, pin);
     savePinToCloud().then(()=>{ toast('บันทึกการตั้งค่า + PIN sync แล้ว ✓'); });
   } else {
@@ -1231,7 +1258,7 @@ function downloadXLSX(rows, filename, sheetName){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName||'รายการอุปกรณ์');
   // Column widths matching the form template
-  const FORM_WIDTHS = {'ลำดับ':6,'รหัส':16,'ชื่อ':50,'หมวด':34,'สอบเทียบล่าสุด':14,'ความถี่':7,'ครบกำหนด':11,'เหลือ/เกิน':9,'เหลือ/เกิน (วัน)':9,'Cert':5,'สถานะ':7,'พิกัด':21,'ความละเอียด':21,'ช่วงการใช้งาน/ช่วงสอบเทียบ':25,'ค่ายอมรับได้':16,'ผลการสอบเทียบ':15,'เอกสารอ้างอิง':15,'หมายเหตุ':9};
+  const FORM_WIDTHS = {'ลำดับ':6,'รหัส':16,'ชื่อ':50,'หมวด':34,'สอบเทียบล่าสุด':14,'ความถี่':7,'ครบกำหนด':11,'เหลือ/เกิน':9,'เหลือ/เกิน (วัน)':9,'Cert':5,'สถานะ':7,'พิกัด':21,'ความละเอียด':21,'ช่วงสอบเทียบ':25,'ช่วงการใช้งาน/ช่วงสอบเทียบ':25,'ค่ายอมรับได้':16,'ผลการสอบเทียบ':15,'เอกสาร Cert':12,'เอกสารอ้างอิง':15,'หมายเหตุ':15,'ม.ค.':5,'ก.พ.':5,'มี.ค.':5,'เม.ย.':5,'พ.ค.':5,'มิ.ย.':5,'ก.ค.':5,'ส.ค.':5,'ก.ย.':5,'ต.ค.':5,'พ.ย.':5,'ธ.ค.':5};
   const keys = Object.keys(rows[0]||{});
   ws['!cols'] = keys.map(k => ({wch: FORM_WIDTHS[k] || Math.max(k.length*2, 8)}));
   XLSX.writeFile(wb, filename);
@@ -1244,10 +1271,22 @@ function exportSoon(){ const list=items.filter(i=>getStatus(i)==='soon'); if(!li
 function exportAnnualPlan(){
   const year = new Date().getFullYear();
   const rows = items.map((it,idx)=>{
-    const row = {'ลำดับ':idx+1,'รหัส':it.id,'ชื่อ':it.name,'หมวด':it.category||''};
+    const row = {
+      'ลำดับ':idx+1,
+      'รหัส':it.id,
+      'ชื่อ':it.name,
+      'หมวด':it.category||'',
+      'พิกัด':it.range||'',
+      'ความละเอียด':it.resolution||'',
+      'ช่วงสอบเทียบ':it.calibRange||'',
+      'ค่ายอมรับได้':it.tolerance||'',
+      'ความถี่':intervalLabel(it.interval),
+      'สอบเทียบล่าสุด':it.lastCalib||''
+    };
     MONTHS_TH.forEach((m,mi)=>{ row[m] = isDueMonth(it,mi,year) ? '●' : ''; });
-    row['สอบเทียบล่าสุด'] = it.lastCalib||'';
-    row['ความถี่'] = intervalLabel(it.interval);
+    row['ผลการสอบเทียบ'] = it.calibResult||'';
+    row['เอกสาร Cert'] = it.docRef||'';
+    row['หมายเหตุ'] = it.note||'';
     return row;
   });
   downloadXLSX(rows, `CalibPlan_${year+543}.xlsx`, 'แผนสอบเทียบประจำปี');
@@ -1262,8 +1301,22 @@ function exportPlanRange(){
   for(let i=from;i<=to;i++) months.push(i);
   
   const rows = items.map((it,idx)=>{
-    const row = {'ลำดับ':idx+1,'รหัส':it.id,'ชื่อ':it.name,'หมวด':it.category||''};
+    const row = {
+      'ลำดับ':idx+1,
+      'รหัส':it.id,
+      'ชื่อ':it.name,
+      'หมวด':it.category||'',
+      'พิกัด':it.range||'',
+      'ความละเอียด':it.resolution||'',
+      'ช่วงสอบเทียบ':it.calibRange||'',
+      'ค่ายอมรับได้':it.tolerance||'',
+      'ความถี่':intervalLabel(it.interval),
+      'สอบเทียบล่าสุด':it.lastCalib||''
+    };
     months.forEach(mi=>{ row[MONTHS_TH[mi]] = isDueMonth(it,mi,year) ? '●' : ''; });
+    row['ผลการสอบเทียบ'] = it.calibResult||'';
+    row['เอกสาร Cert'] = it.docRef||'';
+    row['หมายเหตุ'] = it.note||'';
     return row;
   });
   downloadXLSX(rows, `CalibPlan_${MONTHS_TH[from]}-${MONTHS_TH[to]}_${year+543}.xlsx`, 'แผนสอบเทียบ');
