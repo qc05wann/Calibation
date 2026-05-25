@@ -283,7 +283,7 @@ function initFirebase(){
   } catch(e){
     console.error('Firebase init error:', e);
     fbReady = false;
-    setSyncStatus('offline','ออฟไลน์ (localStorage)');
+    setSyncStatus('offline','ออฟไลน์: '+e.message);
   }
 }
 
@@ -293,6 +293,9 @@ function setSyncStatus(state, text){
 }
 
 // Strip large base64 cert data for Firestore (keep URLs and small data)
+function toDocId(id){ return id.replace(/\//g, '__'); } // Firestore doesn't allow / in doc IDs
+function fromDocId(docId){ return docId.replace(/__/g, '/'); }
+
 function stripCertsForCloud(item){
   const clone = JSON.parse(JSON.stringify(item));
   // Keep cert count but strip large base64 to avoid 1MB doc limit
@@ -324,21 +327,22 @@ async function saveItemsToCloud(){
     
     // Get existing docs to find deletions
     const snapshot = await col.get();
-    const existingIds = new Set();
-    snapshot.forEach(doc => existingIds.add(doc.id));
+    const existingDocIds = new Set();
+    snapshot.forEach(doc => existingDocIds.add(doc.id));
     
     // Update/create items
-    const currentIds = new Set();
+    const currentDocIds = new Set();
     items.forEach(it => {
-      currentIds.add(it.id);
-      const ref = col.doc(it.id);
+      const docId = toDocId(it.id);
+      currentDocIds.add(docId);
+      const ref = col.doc(docId);
       batch.set(ref, stripCertsForCloud(it));
     });
     
     // Delete removed items
-    existingIds.forEach(id => {
-      if(!currentIds.has(id)){
-        batch.delete(col.doc(id));
+    existingDocIds.forEach(docId => {
+      if(!currentDocIds.has(docId)){
+        batch.delete(col.doc(docId));
       }
     });
     
@@ -346,7 +350,7 @@ async function saveItemsToCloud(){
     setSyncStatus('online','Sync สำเร็จ ✓');
   } catch(e){
     console.error('Cloud save error:', e);
-    setSyncStatus('offline','Sync ผิดพลาด');
+    setSyncStatus('offline','Sync ผิดพลาด: '+(e.code||e.message||e));
   }
 }
 
@@ -392,7 +396,7 @@ async function loadItemsFromCloud(){
     return true;
   } catch(e){
     console.error('Cloud load error:', e);
-    setSyncStatus('offline','โหลดไม่สำเร็จ — ใช้ข้อมูลในเครื่อง');
+    setSyncStatus('offline','โหลดไม่สำเร็จ: '+(e.code||e.message||e));
     return false;
   }
 }
@@ -419,7 +423,7 @@ function startRealtimeSync(){
     setSyncStatus('online','Firebase เชื่อมต่อแล้ว');
   }, err => {
     console.error('Realtime listener error:', err);
-    setSyncStatus('offline','ขาดการเชื่อมต่อ');
+    setSyncStatus('offline','ขาดการเชื่อมต่อ: '+(err.code||err.message||err));
   });
 }
 
@@ -1599,7 +1603,7 @@ async function init(){
       renderPage();
     } catch(e){
       console.error('Firebase sync error:', e);
-      setSyncStatus('offline','Sync ผิดพลาด — ใช้ข้อมูลในเครื่อง');
+      setSyncStatus('offline','Sync ผิดพลาด: '+(e.code||e.message||e));
     }
   }
 }
