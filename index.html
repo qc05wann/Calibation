@@ -268,6 +268,12 @@ let unsubListener = null;
 
 function initFirebase(){
   try {
+    if(typeof firebase === 'undefined'){ 
+      console.warn('Firebase SDK not loaded');
+      fbReady = false;
+      setSyncStatus('offline','ออฟไลน์ (ไม่พบ Firebase SDK)');
+      return;
+    }
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
     db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
@@ -1551,41 +1557,50 @@ async function uploadAllToCloud(){
 
 // ===== INIT =====
 async function init(){
-  // 1. Load from localStorage first (fast)
+  // 1. Load local data + show PIN pad IMMEDIATELY
   loadItems();
   loadSettings();
-  
-  // 2. Initialize Firebase BEFORE PIN check
-  initFirebase();
-  
-  // 3. Load PIN from cloud first so initPIN uses the latest
-  if(fbReady){
-    await loadPinFromCloud();
-  }
-  
-  // 4. Now init PIN (uses cloud-synced localStorage)
   initPIN();
   renderNav();
   renderPage();
   
-  // 5. Load data from cloud
+  // 2. Firebase sync in background (won't block PIN screen)
+  initFirebase();
+  
   if(fbReady){
-    const cloudLoaded = await loadItemsFromCloud();
-    await loadSettingsFromCloud();
-    
-    if(!cloudLoaded && items.length > 0){
-      // First time: push local data to cloud
-      setSyncStatus('syncing','อัพโหลดข้อมูลเริ่มต้น...');
-      await saveItemsToCloud();
-      await saveSettingsToCloud();
-      await savePinToCloud();
+    try {
+      // Load PIN from cloud - update if different
+      const oldPin = localStorage.getItem(LS_PIN);
+      await Promise.race([
+        loadPinFromCloud(),
+        new Promise((_,rej) => setTimeout(()=>rej('timeout'), 5000))
+      ]).catch(()=> console.log('PIN cloud load timeout'));
+      
+      const newPin = localStorage.getItem(LS_PIN);
+      if(oldPin !== newPin){ pinInput=''; renderPIN(); }
+      
+      // Load equipment data from cloud
+      const cloudLoaded = await Promise.race([
+        loadItemsFromCloud(),
+        new Promise(resolve => setTimeout(()=>resolve(false), 10000))
+      ]).catch(()=>false);
+      
+      await loadSettingsFromCloud().catch(()=>{});
+      
+      if(!cloudLoaded && items.length > 0){
+        setSyncStatus('syncing','อัพโหลดข้อมูลเริ่มต้น...');
+        await saveItemsToCloud().catch(()=>{});
+        await saveSettingsToCloud().catch(()=>{});
+        await savePinToCloud().catch(()=>{});
+      }
+      
+      startRealtimeSync();
+      renderNav();
+      renderPage();
+    } catch(e){
+      console.error('Firebase sync error:', e);
+      setSyncStatus('offline','Sync ผิดพลาด — ใช้ข้อมูลในเครื่อง');
     }
-    
-    // 6. Start real-time listener
-    startRealtimeSync();
-    
-    renderNav();
-    renderPage();
   }
 }
 init();
