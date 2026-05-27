@@ -255,13 +255,12 @@ const LS_SETTINGS = 'ct_settings_v1';
 
 // ===== FIREBASE =====
 const firebaseConfig = {
-  apiKey: "AIzaSyAB0aoBuGZZhUIW80_3GJ3Snn4GAtZ2e4c",
-  authDomain: "calibation-aec01.firebaseapp.com",
-  databaseURL: "https://calibation-aec01-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "calibation-aec01",
-  storageBucket: "calibation-aec01.firebasestorage.app",
-  messagingSenderId: "346549259919",
-  appId: "1:346549259919:web:a7fed0b0ee70896b8e2afa"
+  apiKey: "AIzaSyB-PmFBv-YKPoQsTBNFMTzQ1Z0JTK3od0s",
+  authDomain: "calibtrack-wann.firebaseapp.com",
+  projectId: "calibtrack-wann",
+  storageBucket: "calibtrack-wann.firebasestorage.app",
+  messagingSenderId: "770336609477",
+  appId: "1:770336609477:web:612bf2ba236f8059034cac"
 };
 
 let db = null;
@@ -474,6 +473,7 @@ let settings = {};
 let activePage = 'equipment';
 let editItem = null;
 let searchQ = '';
+function focusSearch(){ requestAnimationFrame(()=>{ const el=document.getElementById('searchInput'); if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);} }); }
 let filterStatus = 'all';
 let planView = 'table'; // 'table' or 'calendar'
 
@@ -544,6 +544,8 @@ function initPIN(){
 function handlePinKeyboard(e){
   const pinScreen = document.getElementById('pinScreen');
   if(!pinScreen || pinScreen.style.display==='none') return;
+  const tag = (e.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea'||tag==='select') return;
   if(e.key>='0' && e.key<='9'){ handlePinKey(parseInt(e.key)); }
   else if(e.key==='Backspace'){ handlePinKey('⌫'); }
   else if(e.key==='Enter' && pinInput.length===PIN_LENGTH){ checkPIN(); }
@@ -671,7 +673,7 @@ function renderEquipment(mc){
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
       <div class="search-bar">
         <span class="icon">🔍</span>
-        <input id="searchInput" placeholder="ค้นหา รหัส / ชื่อ / หมวด..." value="${searchQ}" oninput="searchQ=this.value;renderPage()"/>
+        <input id="searchInput" placeholder="ค้นหา รหัส / ชื่อ / หมวด..." value="${searchQ}" oninput="searchQ=this.value;renderPage();focusSearch()"/>
       </div>
       <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ เพิ่มใหม่</button>
       <button class="btn btn-secondary btn-sm" onclick="openImportModal()">📥 Import Excel</button>
@@ -733,7 +735,7 @@ function renderDashboard(mc){
   const total = items.length;
   const overdue = items.filter(i=>getStatus(i)==='overdue').length;
   const soon = items.filter(i=>getStatus(i)==='soon').length;
-  const hasCert = items.filter(i=>i.docRef&&i.docRef!=='').length;
+  const hasCert = items.filter(i=>i.certs&&i.certs.length>0).length;
   const ok = total - overdue - soon;
 
   mc.innerHTML = `
