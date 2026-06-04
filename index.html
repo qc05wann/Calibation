@@ -302,6 +302,26 @@ function setSyncStatus(state, text){
 function toDocId(id){ return id.replace(/\//g, '__'); } // Firestore doesn't allow / in doc IDs
 function fromDocId(docId){ return docId.replace(/__/g, '/'); }
 
+// ===== IMAGE COMPRESSION =====
+// บีบอัดรูปก่อนบันทึก → ขนาดเล็ก sync Cloud ได้
+function compressImage(dataUrl, maxPx, quality){
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if(w > maxPx || h > maxPx){
+        if(w > h){ h = Math.round(h * maxPx / w); w = maxPx; }
+        else { w = Math.round(w * maxPx / h); h = maxPx; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.src = dataUrl;
+  });
+}
+
 function stripCertsForCloud(item){
   const clone = JSON.parse(JSON.stringify(item));
   // Keep cert count but strip large base64 to avoid 1MB doc limit
@@ -320,13 +340,11 @@ function stripCertsForCloud(item){
       return hc;
     });
   }
-  // Strip large photos
+  // Photos are compressed before save — safe to sync to cloud
+  // (strip only if somehow still large, as safety net)
   if(clone.photos && clone.photos.length > 0){
     clone.photoCount = clone.photos.length;
-    clone.photos = clone.photos.map(p => {
-      if(p && p.length > 200000) return '[[LOCAL_PHOTO]]';
-      return p;
-    });
+    clone.photos = clone.photos.map(p => p && p.length > 200000 ? null : p).filter(Boolean);
   }
   return clone;
 }
@@ -400,7 +418,7 @@ async function loadItemsFromCloud(){
           }
         });
       }
-      // Merge local photos back if cloud has [[LOCAL_PHOTO]] placeholders
+      // Merge local photos back if cloud has [[LOCAL_PHOTO]] placeholders (legacy)
       if(data.photos){
         data.photos = data.photos.map((p, idx) => {
           if(p === '[[LOCAL_PHOTO]]' && localItem && localItem.photos && localItem.photos[idx]){
@@ -1075,7 +1093,7 @@ function showItemModal(){
       </div>
       <div class="form-group"><label>หมายเหตุ</label><textarea id="mNote" rows="2">${it.note||''}</textarea></div>
       <div class="form-group">
-        <label>📷 รูปภาพเครื่องมือ</label>
+        <label>📷 รูปภาพเครื่องมือ <span style="font-size:11px;font-weight:400;color:#059669;background:#d1fae5;padding:2px 7px;border-radius:99px;margin-left:4px">✓ บีบอัดอัตโนมัติ · sync Cloud ได้</span></label>
         <div class="photo-zone" onclick="document.getElementById('photoFileInput').click()">
           📷 คลิกเพื่อเลือกรูปภาพเครื่องมือ (JPG, PNG · สูงสุด 5MB)
           <input type="file" id="photoFileInput" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(event)"/>
@@ -1111,11 +1129,12 @@ function handlePhotoUpload(e){
   Array.from(files).forEach(f=>{
     if(f.size > 5*1024*1024){ toast('ไฟล์เกิน 5MB'); return; }
     const reader = new FileReader();
-    reader.onload = ev => {
-      tempPhotos.push(ev.target.result);
+    reader.onload = async ev => {
+      const compressed = await compressImage(ev.target.result, 800, 0.6);
+      tempPhotos.push(compressed);
       const preview = document.getElementById('photoPreview');
       if(preview){
-        preview.innerHTML += `<div style="position:relative"><img src="${ev.target.result}" class="photo-thumb"/></div>`;
+        preview.innerHTML += `<div style="position:relative"><img src="${compressed}" class="photo-thumb" onclick="openLightbox('${compressed}')"/></div>`;
       }
     };
     reader.readAsDataURL(f);
@@ -1136,11 +1155,13 @@ function handleCertUpload(e){
   Array.from(files).forEach(f=>{
     if(f.size > 5*1024*1024){ toast('ไฟล์เกิน 5MB'); return; }
     const reader = new FileReader();
-    reader.onload = ev => {
-      tempCerts.push(ev.target.result);
+    reader.onload = async ev => {
+      const isImg = f.type.startsWith('image/');
+      const data = isImg ? await compressImage(ev.target.result, 1200, 0.7) : ev.target.result;
+      tempCerts.push(data);
       const preview = document.getElementById('certPreview');
-      if(preview){
-        preview.innerHTML += `<div style="position:relative"><img src="${ev.target.result}" class="cert-thumb"/></div>`;
+      if(preview && isImg){
+        preview.innerHTML += `<div style="position:relative"><img src="${data}" class="cert-thumb" onclick="openLightbox('${data}')"/></div>`;
       }
     };
     reader.readAsDataURL(f);
