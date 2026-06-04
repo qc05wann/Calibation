@@ -151,12 +151,6 @@ tr:hover td{background:#f0fdf4}
 .photo-zone:hover{border-color:#60a5fa;background:#eff6ff}
 .photo-preview{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .photo-thumb{width:60px;height:60px;border-radius:6px;object-fit:cover;border:1px solid #e5e7eb}
-/* Lightbox */
-.lightbox-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999;display:flex;align-items:center;justify-content:center}
-.lightbox-overlay img{max-width:92vw;max-height:88dvh;border-radius:10px;box-shadow:0 4px 32px rgba(0,0,0,.6)}
-.lightbox-close{position:fixed;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:26px;width:44px;height:44px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:1000}
-.lightbox-close:hover{background:rgba(255,255,255,.3)}
-.photo-thumb,.cert-thumb{cursor:zoom-in}
 
 /* Responsive */
 @media(max-width:768px){
@@ -419,7 +413,7 @@ async function loadItemsFromCloud(){
     });
     
     items = cloudItems;
-    items.forEach(it => { if(!it.certs) it.certs=[]; if(!it.category) it.category=''; if(!it.range) it.range=''; if(!it.resolution) it.resolution=''; if(!it.calibRange) it.calibRange=''; if(!it.tolerance) it.tolerance=''; if(!it.calibResult) it.calibResult=''; if(!it.docRef) it.docRef=''; if(!it.calibHistory) it.calibHistory=[]; if(!it.photos) it.photos=[]; });
+    items.forEach(it => { if(!it.certs) it.certs=[]; if(!it.category) it.category=''; if(!it.range) it.range=''; if(!it.resolution) it.resolution=''; if(!it.calibRange) it.calibRange=''; if(!it.tolerance) it.tolerance=''; if(!it.calibResult) it.calibResult=''; if(!it.docRef) it.docRef=''; if(!it.calibHistory) it.calibHistory=[]; if(!it.photos) it.photos=[]; if(!it.department) it.department=""; });
     localStorage.setItem(LS_ITEMS, JSON.stringify(items));
     setSyncStatus('online','Firebase เชื่อมต่อแล้ว');
     return true;
@@ -445,7 +439,7 @@ function startRealtimeSync(){
         if(ci.calibHistory) ci.calibHistory.forEach((h,hi) => { if(h.certs) h.certs = h.certs.map((c,ci2) => c==='[[LOCAL]]'&&local?.calibHistory?.[hi]?.certs?.[ci2]?local.calibHistory[hi].certs[ci2]:(c==='[[LOCAL]]'?null:c)).filter(Boolean); });
       });
       items = cloudItems;
-      items.forEach(it => { if(!it.certs) it.certs=[]; if(!it.category) it.category=''; if(!it.range) it.range=''; if(!it.resolution) it.resolution=''; if(!it.calibRange) it.calibRange=''; if(!it.tolerance) it.tolerance=''; if(!it.calibResult) it.calibResult=''; if(!it.docRef) it.docRef=''; if(!it.calibHistory) it.calibHistory=[]; if(!it.photos) it.photos=[]; });
+      items.forEach(it => { if(!it.certs) it.certs=[]; if(!it.category) it.category=''; if(!it.range) it.range=''; if(!it.resolution) it.resolution=''; if(!it.calibRange) it.calibRange=''; if(!it.tolerance) it.tolerance=''; if(!it.calibResult) it.calibResult=''; if(!it.docRef) it.docRef=''; if(!it.calibHistory) it.calibHistory=[]; if(!it.photos) it.photos=[]; if(!it.department) it.department=""; });
       localStorage.setItem(LS_ITEMS, JSON.stringify(items));
       renderPage(); renderNav();
     }
@@ -509,7 +503,7 @@ let planView = 'table'; // 'table' or 'calendar'
 function loadItems(){ 
   const d = localStorage.getItem(LS_ITEMS); 
   items = d ? JSON.parse(d) : JSON.parse(JSON.stringify(DEFAULT_ITEMS));
-  items.forEach(it => { if(!it.certs) it.certs=[]; if(!it.category) it.category=''; if(!it.range) it.range=''; if(!it.resolution) it.resolution=''; if(!it.calibRange) it.calibRange=''; if(!it.tolerance) it.tolerance=''; if(!it.calibResult) it.calibResult=''; if(!it.docRef) it.docRef=''; if(!it.calibHistory) it.calibHistory=[]; if(!it.photos) it.photos=[]; });
+  items.forEach(it => { if(!it.certs) it.certs=[]; if(!it.category) it.category=''; if(!it.range) it.range=''; if(!it.resolution) it.resolution=''; if(!it.calibRange) it.calibRange=''; if(!it.tolerance) it.tolerance=''; if(!it.calibResult) it.calibResult=''; if(!it.docRef) it.docRef=''; if(!it.calibHistory) it.calibHistory=[]; if(!it.photos) it.photos=[]; if(!it.department) it.department=""; });
 }
 function saveItems(){ 
   localStorage.setItem(LS_ITEMS, JSON.stringify(items)); 
@@ -1044,7 +1038,7 @@ function openAddModal(){ editItem=null; showItemModal(); }
 function openEditModal(id){ editItem=items.find(i=>i.id===id)||null; showItemModal(); }
 
 function showItemModal(){
-  const it = editItem || {id:'',name:'',category:'',interval:12,lastCalib:'',certs:[],photos:[],note:'',range:'',resolution:'',calibRange:'',tolerance:'',calibResult:'',docRef:''};
+  const it = editItem || {id:'',name:'',category:'',interval:12,lastCalib:'',certs:[],photos:[],note:'',range:'',resolution:'',calibRange:'',tolerance:'',calibResult:'',docRef:'',department:''};
   const isEdit = !!editItem;
   
   const overlay = document.createElement('div');
@@ -1077,7 +1071,7 @@ function showItemModal(){
       </div>
       <div class="form-row">
         <div class="form-group"><label>เอกสารอ้างอิง</label><input id="mDocRef" value="${it.docRef||''}"/></div>
-        <div class="form-group"></div>
+        <div class="form-group"><label>แผนกผู้ใช้งาน</label><input id="mDepartment" value="${it.department||''}" placeholder="เช่น QC, ผลิต, R&D"/></div>
       </div>
       <div class="form-group"><label>หมายเหตุ</label><textarea id="mNote" rows="2">${it.note||''}</textarea></div>
       <div class="form-group">
@@ -1087,7 +1081,7 @@ function showItemModal(){
           <input type="file" id="photoFileInput" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(event)"/>
         </div>
         <div class="photo-preview" id="photoPreview">
-          ${(it.photos||[]).map((p,i)=>`<div style="position:relative"><img src="${p}" class="photo-thumb" onclick="openLightbox('${p}')"/><button class="btn-icon" style="position:absolute;top:-4px;right:-4px;background:#fee2e2;border-radius:50%;width:18px;height:18px;font-size:10px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removePhoto(${i})">✕</button></div>`).join('')}
+          ${(it.photos||[]).map((p,i)=>`<div style="position:relative"><img src="${p}" class="photo-thumb"/><button class="btn-icon" style="position:absolute;top:-4px;right:-4px;background:#fee2e2;border-radius:50%;width:18px;height:18px;font-size:10px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removePhoto(${i})">✕</button></div>`).join('')}
         </div>
       </div>
       <div class="form-group">
@@ -1097,7 +1091,7 @@ function showItemModal(){
           <input type="file" id="certFileInput" accept="image/*,.pdf" multiple style="display:none" onchange="handleCertUpload(event)"/>
         </div>
         <div class="cert-preview" id="certPreview">
-          ${(it.certs||[]).map((c,i)=>`<div style="position:relative"><img src="${c}" class="cert-thumb" onclick="openLightbox('${c}')"/><button class="btn-icon" style="position:absolute;top:-4px;right:-4px;background:#fee2e2;border-radius:50%;width:18px;height:18px;font-size:10px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removeCert(${i})">✕</button></div>`).join('')}
+          ${(it.certs||[]).map((c,i)=>`<div style="position:relative"><img src="${c}" class="cert-thumb"/><button class="btn-icon" style="position:absolute;top:-4px;right:-4px;background:#fee2e2;border-radius:50%;width:18px;height:18px;font-size:10px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removeCert(${i})">✕</button></div>`).join('')}
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
@@ -1121,7 +1115,7 @@ function handlePhotoUpload(e){
       tempPhotos.push(ev.target.result);
       const preview = document.getElementById('photoPreview');
       if(preview){
-        preview.innerHTML += `<div style="position:relative"><img src="${ev.target.result}" class="photo-thumb" onclick="openLightbox('${ev.target.result}')"/></div>`;
+        preview.innerHTML += `<div style="position:relative"><img src="${ev.target.result}" class="photo-thumb"/></div>`;
       }
     };
     reader.readAsDataURL(f);
@@ -1146,7 +1140,7 @@ function handleCertUpload(e){
       tempCerts.push(ev.target.result);
       const preview = document.getElementById('certPreview');
       if(preview){
-        preview.innerHTML += `<div style="position:relative"><img src="${ev.target.result}" class="cert-thumb" onclick="openLightbox('${ev.target.result}')"/></div>`;
+        preview.innerHTML += `<div style="position:relative"><img src="${ev.target.result}" class="cert-thumb"/></div>`;
       }
     };
     reader.readAsDataURL(f);
@@ -1180,7 +1174,8 @@ function saveItemForm(isEdit){
     calibRange: document.getElementById('mCalibRange').value.trim(),
     tolerance: document.getElementById('mTolerance').value.trim(),
     calibResult: document.getElementById('mCalibResult').value.trim(),
-    docRef: document.getElementById('mDocRef').value.trim()
+    docRef: document.getElementById('mDocRef').value.trim(),
+    department: document.getElementById('mDepartment').value.trim()
   };
 
   if(isEdit){
@@ -1458,7 +1453,7 @@ function handleHistCert(e){
     reader.onload = ev => {
       window._histCerts.push(ev.target.result);
       const p = document.getElementById('hCertPreview');
-      if(p) p.innerHTML += `<img src="${ev.target.result}" class="cert-thumb" onclick="openLightbox('${ev.target.result}')" />`;
+      if(p) p.innerHTML += `<img src="${ev.target.result}" class="cert-thumb"/>`;
     };
     reader.readAsDataURL(f);
   });
@@ -1565,7 +1560,7 @@ function openHistoryModal(id){
               ${h.operator?`<div><span style="color:#9ca3af">ผู้สอบเทียบ:</span> ${h.operator}</div>`:''}
               ${h.note?`<div><span style="color:#9ca3af">หมายเหตุ:</span> ${h.note}</div>`:''}
             </div>
-            ${h.certs&&h.certs.length>0?`<div class="cert-preview" style="margin-top:6px">${h.certs.map(c=>`<img src="${c}" class="cert-thumb" onclick="openLightbox('${c}')" style="cursor:zoom-in" title="คลิกเพื่อดูขนาดเต็ม"/>`).join('')}</div>`:''}
+            ${h.certs&&h.certs.length>0?`<div class="cert-preview" style="margin-top:6px">${h.certs.map(c=>`<img src="${c}" class="cert-thumb" onclick="window.open('${c}','_blank')" style="cursor:pointer" title="คลิกเพื่อดูขนาดเต็ม"/>`).join('')}</div>`:''}
           </div>`;
         }).join('')}
       </div>`}
@@ -1680,15 +1675,6 @@ async function uploadAllToCloud(){
   await saveSettingsToCloud();
   await savePinToCloud();
   toast(`อัพโหลด ${items.length} รายการขึ้น Cloud สำเร็จ ✓`);
-}
-
-// ===== LIGHTBOX =====
-function openLightbox(src){
-  const lb = document.createElement('div');
-  lb.className = 'lightbox-overlay';
-  lb.innerHTML = `<button class="lightbox-close" onclick="this.parentElement.remove()">✕</button><img src="${src}"/>`;
-  lb.addEventListener('click', e=>{ if(e.target===lb) lb.remove(); });
-  document.body.appendChild(lb);
 }
 
 // ===== INIT =====
