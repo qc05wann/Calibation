@@ -151,6 +151,12 @@ tr:hover td{background:#f0fdf4}
 .photo-zone:hover{border-color:#60a5fa;background:#eff6ff}
 .photo-preview{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .photo-thumb{width:60px;height:60px;border-radius:6px;object-fit:cover;border:1px solid #e5e7eb}
+/* Lightbox */
+.lightbox-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999;display:flex;align-items:center;justify-content:center}
+.lightbox-overlay img{max-width:92vw;max-height:88dvh;border-radius:10px;box-shadow:0 4px 32px rgba(0,0,0,.6)}
+.lightbox-close{position:fixed;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:26px;width:44px;height:44px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:1000}
+.lightbox-close:hover{background:rgba(255,255,255,.3)}
+.photo-thumb,.cert-thumb{cursor:zoom-in}
 
 /* Responsive */
 @media(max-width:768px){
@@ -1081,7 +1087,7 @@ function showItemModal(){
           <input type="file" id="photoFileInput" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(event)"/>
         </div>
         <div class="photo-preview" id="photoPreview">
-          ${(it.photos||[]).map((p,i)=>`<div style="position:relative"><img src="${p}" class="photo-thumb"/><button class="btn-icon" style="position:absolute;top:-4px;right:-4px;background:#fee2e2;border-radius:50%;width:18px;height:18px;font-size:10px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removePhoto(${i})">✕</button></div>`).join('')}
+          ${(it.photos||[]).map((p,i)=>`<div style="position:relative"><img src="${p}" class="photo-thumb" onclick="openLightbox('${p}')"/><button class="btn-icon" style="position:absolute;top:-4px;right:-4px;background:#fee2e2;border-radius:50%;width:18px;height:18px;font-size:10px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removePhoto(${i})">✕</button></div>`).join('')}
         </div>
       </div>
       <div class="form-group">
@@ -1091,7 +1097,7 @@ function showItemModal(){
           <input type="file" id="certFileInput" accept="image/*,.pdf" multiple style="display:none" onchange="handleCertUpload(event)"/>
         </div>
         <div class="cert-preview" id="certPreview">
-          ${(it.certs||[]).map((c,i)=>`<div style="position:relative"><img src="${c}" class="cert-thumb"/><button class="btn-icon" style="position:absolute;top:-4px;right:-4px;background:#fee2e2;border-radius:50%;width:18px;height:18px;font-size:10px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removeCert(${i})">✕</button></div>`).join('')}
+          ${(it.certs||[]).map((c,i)=>`<div style="position:relative"><img src="${c}" class="cert-thumb" onclick="openLightbox('${c}')"/><button class="btn-icon" style="position:absolute;top:-4px;right:-4px;background:#fee2e2;border-radius:50%;width:18px;height:18px;font-size:10px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removeCert(${i})">✕</button></div>`).join('')}
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
@@ -1115,7 +1121,7 @@ function handlePhotoUpload(e){
       tempPhotos.push(ev.target.result);
       const preview = document.getElementById('photoPreview');
       if(preview){
-        preview.innerHTML += `<div style="position:relative"><img src="${ev.target.result}" class="photo-thumb"/></div>`;
+        preview.innerHTML += `<div style="position:relative"><img src="${ev.target.result}" class="photo-thumb" onclick="openLightbox('${ev.target.result}')"/></div>`;
       }
     };
     reader.readAsDataURL(f);
@@ -1140,7 +1146,7 @@ function handleCertUpload(e){
       tempCerts.push(ev.target.result);
       const preview = document.getElementById('certPreview');
       if(preview){
-        preview.innerHTML += `<div style="position:relative"><img src="${ev.target.result}" class="cert-thumb"/></div>`;
+        preview.innerHTML += `<div style="position:relative"><img src="${ev.target.result}" class="cert-thumb" onclick="openLightbox('${ev.target.result}')"/></div>`;
       }
     };
     reader.readAsDataURL(f);
@@ -1452,7 +1458,7 @@ function handleHistCert(e){
     reader.onload = ev => {
       window._histCerts.push(ev.target.result);
       const p = document.getElementById('hCertPreview');
-      if(p) p.innerHTML += `<img src="${ev.target.result}" class="cert-thumb"/>`;
+      if(p) p.innerHTML += `<img src="${ev.target.result}" class="cert-thumb" onclick="openLightbox('${ev.target.result}')" />`;
     };
     reader.readAsDataURL(f);
   });
@@ -1559,7 +1565,7 @@ function openHistoryModal(id){
               ${h.operator?`<div><span style="color:#9ca3af">ผู้สอบเทียบ:</span> ${h.operator}</div>`:''}
               ${h.note?`<div><span style="color:#9ca3af">หมายเหตุ:</span> ${h.note}</div>`:''}
             </div>
-            ${h.certs&&h.certs.length>0?`<div class="cert-preview" style="margin-top:6px">${h.certs.map(c=>`<img src="${c}" class="cert-thumb" onclick="window.open('${c}','_blank')" style="cursor:pointer" title="คลิกเพื่อดูขนาดเต็ม"/>`).join('')}</div>`:''}
+            ${h.certs&&h.certs.length>0?`<div class="cert-preview" style="margin-top:6px">${h.certs.map(c=>`<img src="${c}" class="cert-thumb" onclick="openLightbox('${c}')" style="cursor:zoom-in" title="คลิกเพื่อดูขนาดเต็ม"/>`).join('')}</div>`:''}
           </div>`;
         }).join('')}
       </div>`}
@@ -1674,6 +1680,15 @@ async function uploadAllToCloud(){
   await saveSettingsToCloud();
   await savePinToCloud();
   toast(`อัพโหลด ${items.length} รายการขึ้น Cloud สำเร็จ ✓`);
+}
+
+// ===== LIGHTBOX =====
+function openLightbox(src){
+  const lb = document.createElement('div');
+  lb.className = 'lightbox-overlay';
+  lb.innerHTML = `<button class="lightbox-close" onclick="this.parentElement.remove()">✕</button><img src="${src}"/>`;
+  lb.addEventListener('click', e=>{ if(e.target===lb) lb.remove(); });
+  document.body.appendChild(lb);
 }
 
 // ===== INIT =====
