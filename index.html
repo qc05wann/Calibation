@@ -573,7 +573,7 @@ function getStatus(item){
   if(days<=settings.alertDays) return 'soon';
   return 'ok';
 }
-function fmtDate(d){ if(!d) return '-'; const dt=new Date(d); return `${dt.getDate()}/${dt.getMonth()+1}/${dt.getFullYear()+543}`; }
+function fmtDate(d){ if(!d) return '-'; const dt=new Date(d); return `${dt.getDate()}/${dt.getMonth()+1}/${dt.getFullYear()}`; }
 function fmtDateISO(d){ if(!d) return ''; const dt=new Date(d); return dt.toISOString().split('T')[0]; }
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
 
@@ -1133,16 +1133,6 @@ function showItemModal(){
         </div>
         <div class="photo-preview" id="photoPreview">
           ${(it.photos||[]).map((p,i)=>`<div style="position:relative"><img src="${p}" class="photo-thumb" onclick="openLightbox('${p}')"/><button class="btn-icon" style="position:absolute;top:-4px;right:-4px;background:#fee2e2;border-radius:50%;width:18px;height:18px;font-size:10px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removePhoto(${i})">✕</button></div>`).join('')}
-        </div>
-      </div>
-      <div class="form-group">
-        <label>ใบรับรองการสอบเทียบ (Cert)</label>
-        <div class="cert-zone" onclick="document.getElementById('certFileInput').click()">
-          📁 คลิกเพื่อเลือกไฟล์ (รูปภาพ สูงสุด 5MB · PDF สูงสุด 1.5MB)
-          <input type="file" id="certFileInput" accept="image/*,.pdf" multiple style="display:none" onchange="handleCertUpload(event)"/>
-        </div>
-        <div class="cert-preview" id="certPreview">
-          ${(it.certs||[]).map((c,i)=>`<div style="position:relative"><img src="${c}" class="cert-thumb" onclick="openLightbox('${c}')"/><button class="btn-icon" style="position:absolute;top:-4px;right:-4px;background:#fee2e2;border-radius:50%;width:18px;height:18px;font-size:10px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removeCert(${i})">✕</button></div>`).join('')}
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
