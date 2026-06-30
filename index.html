@@ -720,10 +720,11 @@ function renderEquipment(mc){
     }
     if(filterStatus==='overdue') return getStatus(it)==='overdue';
     if(filterStatus==='soon') return getStatus(it)==='soon';
+    if(filterStatus==='new') return getStatus(it)==='new';
     return true;
   });
 
-  const counts = {all:items.length, soon:items.filter(i=>getStatus(i)==='soon').length, overdue:items.filter(i=>getStatus(i)==='overdue').length};
+  const counts = {all:items.length, soon:items.filter(i=>getStatus(i)==='soon').length, overdue:items.filter(i=>getStatus(i)==='overdue').length, new:items.filter(i=>getStatus(i)==='new').length};
 
   mc.innerHTML = `
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
@@ -736,6 +737,7 @@ function renderEquipment(mc){
     </div>
     <div class="filter-bar">
       <span class="filter-chip ${filterStatus==='all'?'active':''}" onclick="filterStatus='all';renderPage()">ทั้งหมด (${counts.all})</span>
+      <span class="filter-chip ${filterStatus==='new'?'active':''}" onclick="filterStatus='new';renderPage()">🆕 ครั้งแรก (${counts.new})</span>
       <span class="filter-chip ${filterStatus==='soon'?'active':''}" onclick="filterStatus='soon';renderPage()">⚠️ ใกล้ครบ (${counts.soon})</span>
       <span class="filter-chip ${filterStatus==='overdue'?'active':''}" onclick="filterStatus='overdue';renderPage()">🔴 เกินกำหนด (${counts.overdue})</span>
     </div>
@@ -974,14 +976,24 @@ function renderAlerts(mc){
 function renderPrint(mc){
   const overdueList = items.filter(i=>getStatus(i)==='overdue');
   const soonList = items.filter(i=>getStatus(i)==='soon');
+  const newList = items.filter(i=>getStatus(i)==='new');
   
   mc.innerHTML = `
     <div class="export-section">
       <h4>📥 Export รายการ</h4>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="exportAll()">📋 อุปกรณ์ทั้งหมด (${items.length})</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportNew()" ${newList.length===0?'disabled':''}>🆕 รอครั้งแรก (${newList.length})</button>
         <button class="btn btn-danger btn-sm" onclick="exportOverdue()" ${overdueList.length===0?'disabled':''}>🔴 เกินกำหนด (${overdueList.length})</button>
         <button class="btn btn-secondary btn-sm" onclick="exportSoon()" ${soonList.length===0?'disabled':''}>⚠️ ใกล้ครบ (${soonList.length})</button>
+      </div>
+    </div>
+    <div class="export-section">
+      <h4>🖨️ พิมพ์แผนประจำปี (รวมรายการรอสอบเทียบครั้งแรก)</h4>
+      <p style="font-size:12px;color:#6b7280;margin-bottom:8px">พิมพ์ตารางแผนสอบเทียบประจำปี พร้อมรายชื่ออุปกรณ์ที่ยังไม่เคยสอบเทียบ (ครั้งแรก) แนบท้าย เพื่อใช้วางแผนนัดสอบเทียบครั้งแรก</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="printAnnualPlanWithNew()">🖨️ พิมพ์ / บันทึก PDF</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportAnnualPlanWithNew()">📥 Export Excel (แผนปี + รอครั้งแรก)</button>
       </div>
     </div>
     <div class="export-section">
@@ -1379,6 +1391,7 @@ function downloadXLSX(rows, filename, sheetName){
 function exportAll(){ downloadXLSX(makeExportRows(items), `CalibTrack_Report_${new Date().toISOString().split('T')[0]}.xlsx`, 'รายการอุปกรณ์'); toast('Export สำเร็จ ✓'); }
 function exportOverdue(){ const list=items.filter(i=>getStatus(i)==='overdue'); if(!list.length){toast('ไม่มีรายการ');return;} downloadXLSX(makeExportRows(list),'CalibTrack_Overdue.xlsx','เกินกำหนด'); toast('Export สำเร็จ ✓'); }
 function exportSoon(){ const list=items.filter(i=>getStatus(i)==='soon'); if(!list.length){toast('ไม่มีรายการ');return;} downloadXLSX(makeExportRows(list),'CalibTrack_DueSoon.xlsx','ใกล้ครบกำหนด'); toast('Export สำเร็จ ✓'); }
+function exportNew(){ const list=items.filter(i=>getStatus(i)==='new'); if(!list.length){toast('ไม่มีรายการ');return;} downloadXLSX(makeExportRows(list),'CalibTrack_FirstTime.xlsx','รอครั้งแรก'); toast('Export สำเร็จ ✓'); }
 
 function exportAnnualPlan(){
   const year = new Date().getFullYear();
@@ -1403,6 +1416,100 @@ function exportAnnualPlan(){
   });
   downloadXLSX(rows, `CalibPlan_${year+543}.xlsx`, 'แผนสอบเทียบประจำปี');
   toast('Export แผนสำเร็จ ✓');
+}
+
+function exportAnnualPlanWithNew(){
+  const year = new Date().getFullYear();
+  const planRows = items.map((it,idx)=>{
+    const row = {
+      'ลำดับ':idx+1, 'รหัส':it.id, 'ชื่อ':it.name, 'หมวด':it.category||'',
+      'พิกัด':it.range||'', 'ความละเอียด':it.resolution||'', 'ช่วงสอบเทียบ':it.calibRange||'',
+      'ค่ายอมรับได้':it.tolerance||'', 'ความถี่':intervalLabel(it.interval), 'สอบเทียบล่าสุด':it.lastCalib||''
+    };
+    MONTHS_TH.forEach((m,mi)=>{ row[m] = isDueMonth(it,mi,year) ? '●' : ''; });
+    row['ผลการสอบเทียบ'] = it.calibResult||'';
+    row['เอกสาร Cert'] = it.docRef||'';
+    row['หมายเหตุ'] = it.note||'';
+    return row;
+  });
+  const newList = items.filter(i=>getStatus(i)==='new');
+  const newRows = makeExportRows(newList);
+
+  const wb = XLSX.utils.book_new();
+  const ws1 = XLSX.utils.json_to_sheet(planRows);
+  XLSX.utils.book_append_sheet(wb, ws1, 'แผนสอบเทียบประจำปี');
+  if(newRows.length){
+    const ws2 = XLSX.utils.json_to_sheet(newRows);
+    XLSX.utils.book_append_sheet(wb, ws2, 'รอครั้งแรก');
+  }
+  XLSX.writeFile(wb, `CalibPlan_${year+543}_with_FirstTime.xlsx`);
+  toast('Export สำเร็จ ✓');
+}
+
+function printAnnualPlanWithNew(){
+  const year = new Date().getFullYear();
+  const newList = items.filter(i=>getStatus(i)==='new');
+
+  const planRowsHtml = items.map((it,idx)=>{
+    const monthCells = Array.from({length:12},(_,m)=>{
+      return `<td style="text-align:center">${isDueMonth(it,m,year)?'●':''}</td>`;
+    }).join('');
+    return `<tr>
+      <td style="text-align:center">${idx+1}</td>
+      <td>${it.id}</td>
+      <td>${it.name}</td>
+      <td>${it.category||'-'}</td>
+      <td style="text-align:center">${intervalLabel(it.interval)}</td>
+      <td style="text-align:center">${it.lastCalib?fmtDate(it.lastCalib):'-'}</td>
+      ${monthCells}
+    </tr>`;
+  }).join('');
+
+  const newRowsHtml = newList.length ? newList.map((it,idx)=>`
+    <tr>
+      <td style="text-align:center">${idx+1}</td>
+      <td>${it.id}</td>
+      <td>${it.name}</td>
+      <td>${it.category||'-'}</td>
+      <td>${it.range||'-'}</td>
+      <td>${it.calibRange||'-'}</td>
+      <td>${it.tolerance||'-'}</td>
+      <td></td>
+    </tr>`).join('') : `<tr><td colspan="8" style="text-align:center;color:#9ca3af;padding:12px">ไม่มีรายการรอสอบเทียบครั้งแรก</td></tr>`;
+
+  const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><title>แผนสอบเทียบประจำปี ${year+543}</title>
+  <style>
+    body{font-family:'Sarabun','Segoe UI',sans-serif;padding:24px;color:#111827}
+    h1{font-size:18px;margin-bottom:4px}
+    h2{font-size:14px;margin:24px 0 8px;color:#374151}
+    table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:16px}
+    th,td{border:1px solid #d1d5db;padding:4px 6px}
+    th{background:#f3f4f6;text-align:center}
+    .meta{font-size:12px;color:#6b7280;margin-bottom:16px}
+    @media print{ @page{ size: A4 landscape; margin:12mm; } }
+  </style></head><body>
+    <h1>แผนสอบเทียบเครื่องมือประจำปี พ.ศ. ${year+543}</h1>
+    <div class="meta">พิมพ์เมื่อ ${fmtDate(new Date().toISOString())} · อุปกรณ์ทั้งหมด ${items.length} รายการ</div>
+    <table>
+      <thead><tr>
+        <th>ลำดับ</th><th>รหัส</th><th>ชื่อ</th><th>หมวด</th><th>ความถี่</th><th>สอบเทียบล่าสุด</th>
+        ${MONTHS_TH.map(m=>`<th>${m}</th>`).join('')}
+      </tr></thead>
+      <tbody>${planRowsHtml}</tbody>
+    </table>
+    <h2>🆕 รายการรอสอบเทียบครั้งแรก (${newList.length} รายการ) — ยังไม่มีกำหนดในแผน เนื่องจากยังไม่เคยสอบเทียบ</h2>
+    <table>
+      <thead><tr>
+        <th>ลำดับ</th><th>รหัส</th><th>ชื่อ</th><th>หมวด</th><th>พิกัด</th><th>ช่วงสอบเทียบ</th><th>ค่ายอมรับได้</th><th>วันที่นัดสอบเทียบครั้งแรก</th>
+      </tr></thead>
+      <tbody>${newRowsHtml}</tbody>
+    </table>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
+  w.onload = ()=>{ w.focus(); w.print(); };
 }
 
 function exportPlanRange(){
