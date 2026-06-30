@@ -530,7 +530,17 @@ function loadItems(){
   items.forEach(it => { if(!it.certs) it.certs=[]; if(!it.category) it.category=''; if(!it.range) it.range=''; if(!it.resolution) it.resolution=''; if(!it.calibRange) it.calibRange=''; if(!it.tolerance) it.tolerance=''; if(!it.calibResult) it.calibResult=''; if(!it.docRef) it.docRef=''; if(!it.calibHistory) it.calibHistory=[]; if(!it.photos) it.photos=[]; if(!it.department) it.department=""; });
 }
 function saveItems(){ 
-  localStorage.setItem(LS_ITEMS, JSON.stringify(items)); 
+  try {
+    localStorage.setItem(LS_ITEMS, JSON.stringify(items)); 
+  } catch(e){
+    console.error('Save error:', e);
+    if(e.name === 'QuotaExceededError' || e.code === 22){
+      toast('⚠️ พื้นที่จัดเก็บเต็ม ไม่สามารถบันทึกได้ กรุณาลดขนาด/จำนวนไฟล์ที่แนบ (PDF/รูปภาพ) แล้วลองใหม่');
+    } else {
+      toast('⚠️ บันทึกไม่สำเร็จ: '+(e.message||e));
+    }
+    return;
+  }
   saveItemsToCloud(); // Sync to Firebase
 }
 function loadSettings(){ const d=localStorage.getItem(LS_SETTINGS); settings=d?JSON.parse(d):{...DEFAULT_SETTINGS}; }
@@ -1111,7 +1121,7 @@ function showItemModal(){
       <div class="form-group">
         <label>ใบรับรองการสอบเทียบ (Cert)</label>
         <div class="cert-zone" onclick="document.getElementById('certFileInput').click()">
-          📁 คลิกเพื่อเลือกไฟล์ (JPG, PNG, PDF · สูงสุด 5MB)
+          📁 คลิกเพื่อเลือกไฟล์ (รูปภาพ สูงสุด 5MB · PDF สูงสุด 1.5MB)
           <input type="file" id="certFileInput" accept="image/*,.pdf" multiple style="display:none" onchange="handleCertUpload(event)"/>
         </div>
         <div class="cert-preview" id="certPreview">
@@ -1159,17 +1169,28 @@ function removePhoto(idx){
 function handleCertUpload(e){
   const files = e.target.files;
   Array.from(files).forEach(f=>{
-    if(f.size > 5*1024*1024){ toast('ไฟล์เกิน 5MB'); return; }
+    const isImg = f.type.startsWith('image/');
+    const isPdf = f.type === 'application/pdf';
+    const maxSize = isPdf ? 1.5*1024*1024 : 5*1024*1024;
+    if(f.size > maxSize){
+      toast(isPdf ? 'ไฟล์ PDF เกิน 1.5MB กรุณาลดขนาดไฟล์ก่อนแนบ' : 'ไฟล์เกิน 5MB');
+      e.target.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = async ev => {
-      const isImg = f.type.startsWith('image/');
       const data = isImg ? await compressImage(ev.target.result, 1200, 0.7) : ev.target.result;
       tempCerts.push(data);
       const preview = document.getElementById('certPreview');
-      if(preview && isImg){
-        preview.innerHTML += `<div style="position:relative"><img src="${data}" class="cert-thumb" onclick="openLightbox('${data}')"/></div>`;
+      if(preview){
+        if(isImg){
+          preview.innerHTML += `<div style="position:relative"><img src="${data}" class="cert-thumb" onclick="openLightbox('${data}')"/></div>`;
+        } else {
+          preview.innerHTML += `<div style="position:relative" title="${f.name}"><a href="${data}" target="_blank" class="cert-thumb" style="display:flex;align-items:center;justify-content:center;text-decoration:none;background:#f3f4f6;font-size:24px;">📄<span style="position:absolute;bottom:2px;left:2px;right:2px;font-size:9px;color:#374151;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:rgba(255,255,255,0.85)">${f.name}</span></a></div>`;
+        }
       }
     };
+    reader.onerror = () => toast('ไม่สามารถอ่านไฟล์ได้: '+f.name);
     reader.readAsDataURL(f);
   });
 }
@@ -1455,7 +1476,7 @@ function openCalibModal(id){
       <div class="form-group">
         <label>แนบใบ Cert</label>
         <div class="cert-zone" onclick="document.getElementById('hCertInput').click()">
-          📁 คลิกเพื่อเลือกไฟล์ (JPG, PNG, PDF · สูงสุด 5MB)
+          📁 คลิกเพื่อเลือกไฟล์ (รูปภาพ สูงสุด 5MB · PDF สูงสุด 1.5MB)
           <input type="file" id="hCertInput" accept="image/*,.pdf" multiple style="display:none" onchange="handleHistCert(event)"/>
         </div>
         <div id="hCertPreview" class="cert-preview"></div>
@@ -1475,13 +1496,28 @@ function openCalibModal(id){
 
 function handleHistCert(e){
   Array.from(e.target.files).forEach(f=>{
-    if(f.size>5*1024*1024){toast('ไฟล์เกิน 5MB');return;}
+    const isImg = f.type.startsWith('image/');
+    const isPdf = f.type === 'application/pdf';
+    const maxSize = isPdf ? 1.5*1024*1024 : 5*1024*1024;
+    if(f.size > maxSize){
+      toast(isPdf ? 'ไฟล์ PDF เกิน 1.5MB กรุณาลดขนาดไฟล์ก่อนแนบ' : 'ไฟล์เกิน 5MB');
+      e.target.value = '';
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = ev => {
-      window._histCerts.push(ev.target.result);
+    reader.onload = async ev => {
+      const data = isImg ? await compressImage(ev.target.result, 1200, 0.7) : ev.target.result;
+      window._histCerts.push(data);
       const p = document.getElementById('hCertPreview');
-      if(p) p.innerHTML += `<img src="${ev.target.result}" class="cert-thumb" onclick="openLightbox('${ev.target.result}')" style="cursor:zoom-in"/>`;
+      if(p){
+        if(isImg){
+          p.innerHTML += `<img src="${data}" class="cert-thumb" onclick="openLightbox('${data}')" style="cursor:zoom-in"/>`;
+        } else {
+          p.innerHTML += `<div style="position:relative" title="${f.name}"><a href="${data}" target="_blank" class="cert-thumb" style="display:flex;align-items:center;justify-content:center;text-decoration:none;background:#f3f4f6;font-size:24px;">📄<span style="position:absolute;bottom:2px;left:2px;right:2px;font-size:9px;color:#374151;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:rgba(255,255,255,0.85)">${f.name}</span></a></div>`;
+        }
+      }
     };
+    reader.onerror = () => toast('ไม่สามารถอ่านไฟล์ได้: '+f.name);
     reader.readAsDataURL(f);
   });
 }
