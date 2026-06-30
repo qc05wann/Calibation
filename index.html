@@ -1720,6 +1720,7 @@ function openHistoryModal(id){
               <span style="font-weight:700;font-size:13px">ครั้งที่ ${hist.length-i}</span>
               <div style="display:flex;align-items:center;gap:10px">
                 <span style="font-weight:600;color:${resultColor}">${h.result||'-'}</span>
+                <button class="btn-icon" title="แก้ไขประวัติครั้งนี้" style="color:#2563eb" onclick="editHistoryEntry('${it.id}', ${i})">✏️</button>
                 <button class="btn-icon" title="ลบประวัติครั้งนี้" style="color:#dc2626" onclick="deleteHistoryEntry('${it.id}', ${i})">🗑️</button>
               </div>
             </div>
@@ -1764,6 +1765,86 @@ function deleteHistoryEntry(id, idx){
   it.calibHistory.splice(idx, 1);
   saveItems();
   toast('ลบประวัติสำเร็จ ✓');
+  closeModal();
+  openHistoryModal(id);
+}
+
+function editHistoryEntry(id, idx){
+  const it = items.find(i=>i.id===id);
+  if(!it || !it.calibHistory || !it.calibHistory[idx]) return;
+  const h = it.calibHistory[idx];
+  const histNo = it.calibHistory.length - idx;
+
+  const overlay = document.createElement('div');
+  overlay.className='modal-overlay';
+  overlay.id='editHistModal';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>✏️ แก้ไขประวัติ — ครั้งที่ ${histNo}</h3>
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px;margin-bottom:16px;font-size:13px">
+        <b>${it.id}</b> — ${it.name}
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>วันที่สอบเทียบ *</label><input type="date" id="ehDate" value="${h.date||''}"/></div>
+        <div class="form-group"><label>ผลการสอบเทียบ *</label><select id="ehResult">
+          <option value="ผ่าน" ${h.result==='ผ่าน'?'selected':''}>✅ ผ่าน</option>
+          <option value="ไม่ผ่าน" ${h.result==='ไม่ผ่าน'?'selected':''}>❌ ไม่ผ่าน</option>
+          <option value="ผ่านแบบมีเงื่อนไข" ${h.result==='ผ่านแบบมีเงื่อนไข'?'selected':''}>⚠️ ผ่านแบบมีเงื่อนไข</option>
+        </select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>พิกัด</label><input id="ehRange" value="${h.range||''}"/></div>
+        <div class="form-group"><label>ความละเอียด</label><input id="ehResolution" value="${h.resolution||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>ช่วงการใช้งาน/สอบเทียบ</label><input id="ehCalibRange" value="${h.calibRange||''}"/></div>
+        <div class="form-group"><label>ค่ายอมรับได้</label><input id="ehTolerance" value="${h.tolerance||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>เอกสารอ้างอิง / เลข Cert</label><input id="ehDocRef" value="${h.docRef||''}"/></div>
+        <div class="form-group"><label>ผู้สอบเทียบ / บริษัท</label><input id="ehOperator" value="${h.operator||''}"/></div>
+      </div>
+      <div class="form-group"><label>หมายเหตุ</label><textarea id="ehNote" rows="2">${h.note||''}</textarea></div>
+      <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px;margin-top:4px;font-size:12px;color:#92400e">
+        ⚠️ ต้องกรอกรหัส PIN เพื่อยืนยันก่อนบันทึกการแก้ไข
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="document.getElementById('editHistModal').remove()">ยกเลิก</button>
+        <button class="btn btn-primary" onclick="saveHistoryEdit('${it.id}', ${idx})">💾 บันทึกการแก้ไข</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function saveHistoryEdit(id, idx){
+  const it = items.find(i=>i.id===id);
+  if(!it || !it.calibHistory || !it.calibHistory[idx]) return;
+  const newDate = document.getElementById('ehDate').value;
+  if(!newDate){ toast('กรุณาเลือกวันที่'); return; }
+
+  const correctPin = localStorage.getItem(LS_PIN) || PIN_DEFAULT;
+  const enteredPin = prompt('กรุณากรอกรหัส PIN เพื่อยืนยันการแก้ไขประวัติ');
+  if(enteredPin===null) return; // cancelled
+  if(enteredPin !== correctPin){
+    toast('รหัส PIN ไม่ถูกต้อง ❌');
+    return;
+  }
+
+  const h = it.calibHistory[idx];
+  h.date = newDate;
+  h.result = document.getElementById('ehResult').value;
+  h.range = document.getElementById('ehRange').value.trim();
+  h.resolution = document.getElementById('ehResolution').value.trim();
+  h.calibRange = document.getElementById('ehCalibRange').value.trim();
+  h.tolerance = document.getElementById('ehTolerance').value.trim();
+  h.docRef = document.getElementById('ehDocRef').value.trim();
+  h.operator = document.getElementById('ehOperator').value.trim();
+  h.note = document.getElementById('ehNote').value.trim();
+
+  saveItems();
+  document.getElementById('editHistModal').remove();
+  toast('แก้ไขประวัติสำเร็จ ✓');
   closeModal();
   openHistoryModal(id);
 }
